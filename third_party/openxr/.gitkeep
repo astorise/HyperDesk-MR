@@ -1,0 +1,5 @@
+# Place Meta XR SDK contents here:
+#   include/openxr/          — OpenXR headers (openxr.h, openxr_platform.h, fb_passthrough.h, ...)
+#   libs/android.arm64-v8a/  — libopenxr_loader.so
+#
+# Obtain from: https://developer.oculus.com/downloads/package/oculus-openxr-mobile-sdk/

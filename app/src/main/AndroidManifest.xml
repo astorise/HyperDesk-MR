@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.hyperdesk.mr">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
+
+    <uses-feature
+        android:name="android.hardware.vr.headtracking"
+        android:required="true"
+        android:version="1" />
+
+    <application
+        android:label="HyperDesk MR"
+        android:hasCode="false">
+
+        <activity
+            android:name="android.app.NativeActivity"
+            android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape">
+
+            <meta-data
+                android:name="android.app.lib_name"
+                android:value="hyperdesk_mr" />
+
+            <meta-data
+                android:name="com.samsung.android.vr.application.mode"
+                android:value="vr_only" />
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

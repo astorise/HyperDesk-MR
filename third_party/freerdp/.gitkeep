@@ -1,0 +1,6 @@
+# Place FreeRDP 3.x Android arm64-v8a build outputs here:
+#   include/freerdp3/        — FreeRDP headers (freerdp/*.h, winpr/*.h)
+#   lib/                     — libfreerdp3.a, libfreerdp-client3.a, libwinpr3.a
+#
+# Build instructions: compile FreeRDP 3.x with Android NDK cross-compile toolchain targeting
+# arm64-v8a, API level 32, with -DWITH_CLIENT_COMMON=ON -DWITH_CHANNELS=ON -DWITH_GFXREDIR=ON
