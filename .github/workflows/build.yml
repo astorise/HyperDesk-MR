@@ -51,15 +51,9 @@ jobs:
           git clone --depth=1 https://github.com/KDAB/android_openssl.git /tmp/android_openssl
           OPENSSL_PREBUILT=/tmp/android_openssl/ssl_3
 
-          # OpenSSL source: run ./Configure to generate configuration.h (no build needed)
-          curl -fL https://github.com/openssl/openssl/archive/refs/tags/openssl-3.3.3.tar.gz \
-            | tar xz -C /tmp/
-          cd /tmp/openssl-openssl-3.3.3
-          PATH="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin:$PATH" \
-            ./Configure android-arm64 --prefix=/tmp/openssl-install \
-            -D__ANDROID_API__=32 no-shared no-tests 2>/dev/null
-          cd "$GITHUB_WORKSPACE"
-          OPENSSL_INC=/tmp/openssl-openssl-3.3.3/include
+          # OpenSSL headers (system package has configuration.h pre-generated)
+          sudo apt-get install -y libssl-dev
+          OPENSSL_INC=/usr/include
 
           git clone --depth=1 --branch 3.8.0 https://github.com/FreeRDP/FreeRDP.git /tmp/freerdp
           cmake -S /tmp/freerdp -B /tmp/freerdp-build \
