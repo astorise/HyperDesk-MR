@@ -1,7 +1,10 @@
 #pragma once
 
-#include <openxr/openxr.h>
+// openxr_platform.h needs Vulkan and JNI headers before it
+#include <jni.h>
 #include <vulkan/vulkan.h>
+#include <openxr/openxr.h>
+#include <openxr/openxr_platform.h>
 #include <android/hardware_buffer.h>
 
 #include <cstdint>

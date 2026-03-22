@@ -1,5 +1,6 @@
 #pragma once
 
+#include <freerdp/channels/disp.h>
 #include <freerdp/client/disp.h>
 #include <cstdint>
 #include <vector>

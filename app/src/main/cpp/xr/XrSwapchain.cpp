@@ -5,7 +5,7 @@
 
 #include <vulkan/vulkan_android.h>
 
-HdSwapchain::XrSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32_t monitorIndex)
+HdSwapchain::HdSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32_t monitorIndex)
     : ctx_(ctx), width_(width), height_(height), monitorIndex_(monitorIndex) {
 
     XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
@@ -32,7 +32,7 @@ HdSwapchain::XrSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32
     LOGD("XrSwapchain[%u] created: %u images %ux%u", monitorIndex_, imageCount, width_, height_);
 }
 
-HdSwapchain::~XrSwapchain() {
+HdSwapchain::~HdSwapchain() {
     // Free any externally-bound device memory.
     VkDevice dev = ctx_.GetVkDevice();
     for (auto& slot : slotMemory_) {

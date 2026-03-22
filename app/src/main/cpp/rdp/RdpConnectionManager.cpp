@@ -156,10 +156,10 @@ void RdpConnectionManager::OnChannelsConnected(freerdp* instance, rdpChannels* c
     }
 
     // Obtain GFX pipeline context.
-    ctx->gfx = static_cast<RdpGfxClientContext*>(
+    ctx->gfx = static_cast<RdpgfxClientContext*>(
         freerdp_client_channel_get_interface(channels, RDPGFX_DVC_CHANNEL_NAME));
     if (ctx->gfx) {
-        LOGI("RDP: RdpGfxClientContext obtained");
+        LOGI("RDP: RdpgfxClientContext obtained");
         ctx->gfx->SurfaceCreated     = OnGfxSurfaceCreated;
         ctx->gfx->StartFrame         = OnGfxStartFrame;
         ctx->gfx->SurfaceToOutput    = OnGfxSurfaceToOutput;
@@ -173,7 +173,7 @@ void RdpConnectionManager::OnChannelsConnected(freerdp* instance, rdpChannels* c
 
 // ── GFX callbacks ─────────────────────────────────────────────────────────────
 
-UINT RdpConnectionManager::OnGfxSurfaceCreated(RdpGfxClientContext* gfx,
+UINT RdpConnectionManager::OnGfxSurfaceCreated(RdpgfxClientContext* gfx,
                                                 const RDPGFX_CREATE_SURFACE_PDU* pdu) {
     auto* self = static_cast<RdpConnectionManager*>(gfx->custom);
     uint32_t idx = pdu->surfaceId % kMaxMonitors;
@@ -182,20 +182,20 @@ UINT RdpConnectionManager::OnGfxSurfaceCreated(RdpGfxClientContext* gfx,
     return CHANNEL_RC_OK;
 }
 
-UINT RdpConnectionManager::OnGfxStartFrame(RdpGfxClientContext* /*gfx*/,
+UINT RdpConnectionManager::OnGfxStartFrame(RdpgfxClientContext* /*gfx*/,
                                             const RDPGFX_START_FRAME_PDU* /*pdu*/) {
     return CHANNEL_RC_OK;
 }
 
-UINT RdpConnectionManager::OnGfxSurfaceToOutput(RdpGfxClientContext* gfx,
-                                                  const RDPGFX_SURFACE_TO_OUTPUT_PDU* pdu) {
+UINT RdpConnectionManager::OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
+                                                  const RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU* pdu) {
     (void)gfx;
     (void)pdu;
     // Surface-to-output mapping recorded; actual frame data arrives via the codec callback.
     return CHANNEL_RC_OK;
 }
 
-UINT RdpConnectionManager::OnGfxEndFrame(RdpGfxClientContext* /*gfx*/,
+UINT RdpConnectionManager::OnGfxEndFrame(RdpgfxClientContext* /*gfx*/,
                                           const RDPGFX_END_FRAME_PDU* /*pdu*/) {
     return CHANNEL_RC_OK;
 }

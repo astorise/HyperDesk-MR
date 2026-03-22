@@ -12,14 +12,15 @@
 #include <thread>
 
 class RdpDisplayControl;
+class RdpConnectionManager;
 
 // Extended FreeRDP client context — must begin with rdpClientContext so that
 // FreeRDP's internal code can safely cast between the two types.
 struct HyperDeskRdpContext {
-    rdpClientContext      base;       // MUST be first member
-    RdpConnectionManager* self;
-    DispClientContext*    disp;
-    RdpGfxClientContext*  gfx;
+    rdpClientContext        base;       // MUST be first member
+    RdpConnectionManager*   self;
+    DispClientContext*       disp;
+    RdpgfxClientContext*     gfx;
 };
 
 class RdpConnectionManager {
@@ -51,13 +52,13 @@ public:
     static void OnChannelsConnected(freerdp* instance, rdpChannels* channels);
 
     // GFX pipeline callback — receives encoded H.264 surfaces.
-    static UINT OnGfxSurfaceCreated(RdpGfxClientContext* gfx,
+    static UINT OnGfxSurfaceCreated(RdpgfxClientContext* gfx,
                                     const RDPGFX_CREATE_SURFACE_PDU* pdu);
-    static UINT OnGfxStartFrame(RdpGfxClientContext* gfx,
+    static UINT OnGfxStartFrame(RdpgfxClientContext* gfx,
                                 const RDPGFX_START_FRAME_PDU* pdu);
-    static UINT OnGfxSurfaceToOutput(RdpGfxClientContext* gfx,
-                                     const RDPGFX_SURFACE_TO_OUTPUT_PDU* pdu);
-    static UINT OnGfxEndFrame(RdpGfxClientContext* gfx,
+    static UINT OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
+                                     const RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU* pdu);
+    static UINT OnGfxEndFrame(RdpgfxClientContext* gfx,
                               const RDPGFX_END_FRAME_PDU* pdu);
 
 private:

@@ -103,6 +103,6 @@ XrCompositionLayerQuad XrCompositor::BuildQuadLayer(uint32_t monitorIndex,
     layer.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
     layer.subImage    = swapchains_[monitorIndex]->GetSubImage();
     layer.pose        = mon.worldPose;
-    layer.size        = mon.sizeMeters;
+    layer.size        = {mon.sizeMeters.x, mon.sizeMeters.y};
     return layer;
 }
