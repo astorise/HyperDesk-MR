@@ -204,9 +204,9 @@ void XrContext::CreateSession() {
     spaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
     XR_CHECK(xrCreateReferenceSpace(session_, &spaceInfo, &worldSpace_));
 
-    XR_CHECK(xrBeginSession(session_, &(XrSessionBeginInfo{
-        XR_TYPE_SESSION_BEGIN_INFO, nullptr,
-        XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO})));
+    XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
+    beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+    XR_CHECK(xrBeginSession(session_, &beginInfo));
     LOGI("XrSession begun");
 }
 

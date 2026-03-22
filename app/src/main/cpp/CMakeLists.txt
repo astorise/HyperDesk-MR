@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # ── Compiler flags ─────────────────────────────────────────────────────────────
 add_compile_options(
     -Wall -Wextra -Werror
+    -Wno-missing-field-initializers
     -fvisibility=hidden
     -ffunction-sections
     -fdata-sections
