@@ -66,10 +66,9 @@ jobs:
             -DWITH_SAMPLE=OFF -DWITH_CLIENT=OFF -DWITH_SERVER=OFF \
             -DBUILD_SHARED_LIBS=OFF -DWITH_JPEG=OFF -DWITH_FFMPEG=OFF \
             -DWITH_OPUS=OFF -DWITH_WEBVIEW=OFF -DWITH_SWSCALE=OFF \
+            -DCMAKE_HAVE_LIBC_PTHREAD=1 \
             -DCMAKE_THREAD_LIBS_INIT="" \
-            -DCMAKE_HAVE_THREADS_LIBRARY=1 \
-            -DCMAKE_USE_WIN32_THREADS_INIT=0 \
-            -DCMAKE_USE_PTHREADS_INIT=1
+            -DThreads_FOUND=TRUE
           cmake --build /tmp/freerdp-build \
             --target freerdp winpr freerdp-client --parallel $(nproc)
 
