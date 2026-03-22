@@ -65,7 +65,7 @@ jobs:
             -DBUILD_SHARED_LIBS=OFF -DWITH_JPEG=OFF -DWITH_FFMPEG=OFF \
             -DWITH_OPUS=OFF -DWITH_WEBVIEW=OFF -DWITH_SWSCALE=OFF
           cmake --build /tmp/freerdp-build \
-            --target freerdp3 freerdp-client3 winpr3 --parallel $(nproc)
+            --target freerdp winpr freerdp-client --parallel $(nproc)
 
           mkdir -p third_party/freerdp/lib third_party/freerdp/include
           cp /tmp/freerdp-build/libwinpr/libwinpr3.a         third_party/freerdp/lib/
