@@ -60,6 +60,15 @@ target_include_directories(openxr_loader INTERFACE
     "${OPENXR_SDK_ROOT}/include/openxr"
 )
 
+# ── OpenSSL prebuilt shared libraries ─────────────────────────────────────────
+set(OPENSSL_ROOT "${THIRD_PARTY_DIR}/openssl")
+foreach(LIB ssl_3 crypto_3)
+    add_library(${LIB} SHARED IMPORTED)
+    set_target_properties(${LIB} PROPERTIES
+        IMPORTED_LOCATION "${OPENSSL_ROOT}/libs/android.arm64-v8a/lib${LIB}.so"
+    )
+endforeach()
+
 # ── FreeRDP 3.x static libraries ──────────────────────────────────────────────
 foreach(LIB freerdp3 freerdp-client3 winpr3)
     add_library(${LIB} STATIC IMPORTED)
@@ -102,6 +111,8 @@ target_link_libraries(hyperdesk_mr
         freerdp3
         freerdp-client3
         winpr3
+        ssl_3
+        crypto_3
         ${log-lib}
         ${android-lib}
         ${mediandk-lib}

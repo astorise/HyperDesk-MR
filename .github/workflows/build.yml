@@ -95,6 +95,11 @@ jobs:
           cp -r /tmp/freerdp-build/winpr/include/winpr/. \
             third_party/freerdp/include/winpr/ 2>/dev/null || true
 
+          # OpenSSL prebuilt .so — packaged into APK and linked by FreeRDP
+          mkdir -p third_party/openssl/libs/android.arm64-v8a
+          cp "$OPENSSL_PREBUILT/lib64/libssl_3.so"    third_party/openssl/libs/android.arm64-v8a/
+          cp "$OPENSSL_PREBUILT/lib64/libcrypto_3.so" third_party/openssl/libs/android.arm64-v8a/
+
       - name: Generate Gradle wrapper jar
         run: |
           mkdir /tmp/wg
