@@ -5,6 +5,7 @@ plugins {
 android {
     namespace 'com.hyperdesk.mr'
     compileSdk 34
+    ndkVersion "29.0.13599879"
 
     defaultConfig {
         applicationId "com.hyperdesk.mr"
