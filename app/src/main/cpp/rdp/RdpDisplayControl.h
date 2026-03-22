@@ -26,7 +26,9 @@ public:
     // Registered on the DispClientContext.  FreeRDP passes the context pointer;
     // we recover `this` from ctx->custom.
     static UINT OnDisplayControlCaps(DispClientContext* ctx,
-                                     DISPLAY_CONTROL_CAPS_PDU* caps);
+                                     UINT32 maxNumMonitors,
+                                     UINT32 maxMonitorAreaFactorA,
+                                     UINT32 maxMonitorAreaFactorB);
 
 private:
     MonitorLayout*     layout_      = nullptr;

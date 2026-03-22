@@ -16,22 +16,24 @@ void RdpDisplayControl::Attach(DispClientContext* ctx) {
     ctx_->custom = this;  // store back-pointer for the static callback
 
     // Register the CAPS callback.
-    ctx_->DisplayControlCaps = OnDisplayControlCaps;
+    ctx_->DispCaps = OnDisplayControlCaps;
     LOGI("DisplayControl: channel attached");
 }
 
 // ── CAPS PDU callback (Task 4) ────────────────────────────────────────────────
 
 UINT RdpDisplayControl::OnDisplayControlCaps(DispClientContext* ctx,
-                                              DISPLAY_CONTROL_CAPS_PDU* caps) {
+                                              UINT32 maxNumMonitors,
+                                              UINT32 maxMonitorAreaFactorA,
+                                              UINT32 /*maxMonitorAreaFactorB*/) {
     auto* self = static_cast<RdpDisplayControl*>(ctx->custom);
-    self->maxMonitors_ = caps->MaxNumMonitors;
+    self->maxMonitors_ = maxNumMonitors;
 
     LOGI("DisplayControl: CAPS received — MaxNumMonitors=%u MaxMonitorArea=%u",
-         caps->MaxNumMonitors, caps->MaxMonitorAreaFactorA);
+         maxNumMonitors, maxMonitorAreaFactorA);
 
-    if (caps->MaxNumMonitors < 16) {
-        LOGE("DisplayControl: server supports only %u monitors, need 16", caps->MaxNumMonitors);
+    if (maxNumMonitors < 16) {
+        LOGE("DisplayControl: server supports only %u monitors, need 16", maxNumMonitors);
         return CHANNEL_RC_OK;
     }
 
@@ -47,14 +49,11 @@ UINT RdpDisplayControl::SendMonitorLayout() {
     }
 
     auto entries = BuildLayoutPDU();
+    const UINT32 numMonitors = static_cast<UINT32>(entries.size());
 
-    DISPLAY_CONTROL_MONITOR_LAYOUT_PDU pdu{};
-    pdu.NumMonitors  = static_cast<UINT32>(entries.size());
-    pdu.Monitors     = entries.data();
-
-    UINT result = ctx_->SendMonitorLayout(ctx_, &pdu);
+    UINT result = ctx_->SendMonitorLayout(ctx_, numMonitors, entries.data());
     if (result == CHANNEL_RC_OK) {
-        LOGI("DisplayControl: LAYOUT PDU sent (%u monitors)", pdu.NumMonitors);
+        LOGI("DisplayControl: LAYOUT PDU sent (%u monitors)", numMonitors);
         layout_->SetAllActive();
     } else {
         LOGE("DisplayControl: SendMonitorLayout failed: %u", result);

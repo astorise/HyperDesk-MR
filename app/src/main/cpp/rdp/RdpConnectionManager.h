@@ -3,6 +3,7 @@
 #include <freerdp/freerdp.h>
 #include <freerdp/client/rdpgfx.h>
 #include <freerdp/client/disp.h>
+#include <freerdp/client/channels.h>
 #include <winpr/crt.h>
 
 #include <atomic>
@@ -49,7 +50,7 @@ public:
     static BOOL OnPreConnect(freerdp* instance);
     static BOOL OnPostConnect(freerdp* instance);
     static void OnPostDisconnect(freerdp* instance);
-    static void OnChannelsConnected(freerdp* instance, rdpChannels* channels);
+    static void OnChannelsConnected(void* context, const ChannelConnectedEventArgs* e);
 
     // GFX pipeline callback — receives encoded H.264 surfaces.
     static UINT OnGfxSurfaceCreated(RdpgfxClientContext* gfx,

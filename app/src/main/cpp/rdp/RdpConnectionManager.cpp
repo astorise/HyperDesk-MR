@@ -47,10 +47,10 @@ bool RdpConnectionManager::Connect(const ConnectionParams& params) {
     instance_->PostConnect      = OnPostConnect;
     instance_->PostDisconnect   = OnPostDisconnect;
 
-    // Register channel connect callback via the channels layer.
-    instance_->context->channels->onChannelsConnected = OnChannelsConnected;
+    // Register channel connect callback via PubSub (FreeRDP 3.x).
+    PubSub_SubscribeChannelConnected(instance_->context->pubSub, OnChannelsConnected);
 
-    SetupSettings(instance_->settings, params);
+    SetupSettings(freerdp_get_settings(instance_), params);
 
     // Run FreeRDP event loop on a dedicated thread.
     rdpThread_ = std::thread([this]() { RunEventLoop(); });
@@ -81,7 +81,7 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
 
 void RdpConnectionManager::RunEventLoop() {
     LOGI("RDP thread: connecting to %s",
-         freerdp_settings_get_string(instance_->settings, FreeRDP_ServerHostname));
+         freerdp_settings_get_string(freerdp_get_settings(instance_), FreeRDP_ServerHostname));
 
     if (!freerdp_connect(instance_)) {
         LOGE("freerdp_connect() failed");
@@ -121,7 +121,7 @@ void RdpConnectionManager::Disconnect() {
 
 BOOL RdpConnectionManager::OnPreConnect(freerdp* instance) {
     LOGI("RDP: OnPreConnect");
-    freerdp_client_load_addins(instance->context->channels, instance->settings);
+    freerdp_client_load_addins(instance->context->channels, freerdp_get_settings(instance));
     return TRUE;
 }
 
@@ -138,36 +138,33 @@ void RdpConnectionManager::OnPostDisconnect(freerdp* instance) {
     }
 }
 
-void RdpConnectionManager::OnChannelsConnected(freerdp* instance, rdpChannels* channels) {
-    LOGI("RDP: OnChannelsConnected");
-    auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
+// FreeRDP 3.x PubSub callback: receives one channel interface at a time.
+void RdpConnectionManager::OnChannelsConnected(void* context,
+                                                const ChannelConnectedEventArgs* e) {
+    auto* rdpCtx = static_cast<rdpContext*>(context);
+    auto* ctx    = reinterpret_cast<HyperDeskRdpContext*>(rdpCtx);
     if (!ctx || !ctx->self) return;
 
     RdpConnectionManager* self = ctx->self;
 
-    // Obtain DisplayControl virtual channel context.
-    ctx->disp = static_cast<DispClientContext*>(
-        freerdp_client_channel_get_interface(channels, DISP_DVC_CHANNEL_NAME));
-    if (ctx->disp) {
-        LOGI("RDP: DispClientContext obtained");
-        self->displayControl_.Attach(ctx->disp);
-    } else {
-        LOGW("RDP: DisplayControl channel not available");
-    }
-
-    // Obtain GFX pipeline context.
-    ctx->gfx = static_cast<RdpgfxClientContext*>(
-        freerdp_client_channel_get_interface(channels, RDPGFX_DVC_CHANNEL_NAME));
-    if (ctx->gfx) {
-        LOGI("RDP: RdpgfxClientContext obtained");
-        ctx->gfx->SurfaceCreated     = OnGfxSurfaceCreated;
-        ctx->gfx->StartFrame         = OnGfxStartFrame;
-        ctx->gfx->SurfaceToOutput    = OnGfxSurfaceToOutput;
-        ctx->gfx->EndFrame           = OnGfxEndFrame;
-        // Store back-pointer to self in gfx context's custom data.
-        ctx->gfx->custom = self;
-    } else {
-        LOGW("RDP: GFX channel not available");
+    if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
+        ctx->disp = static_cast<DispClientContext*>(e->pInterface);
+        if (ctx->disp) {
+            LOGI("RDP: DispClientContext obtained");
+            self->displayControl_.Attach(ctx->disp);
+        }
+    } else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
+        ctx->gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
+        if (ctx->gfx) {
+            LOGI("RDP: RdpgfxClientContext obtained");
+            ctx->gfx->CreateSurface      = OnGfxSurfaceCreated;
+            ctx->gfx->StartFrame         = OnGfxStartFrame;
+            ctx->gfx->MapSurfaceToOutput = OnGfxSurfaceToOutput;
+            ctx->gfx->EndFrame           = OnGfxEndFrame;
+            ctx->gfx->custom             = self;
+        } else {
+            LOGW("RDP: GFX channel not available");
+        }
     }
 }
 
