@@ -79,15 +79,21 @@ jobs:
           cmake --build /tmp/freerdp-build \
             --target freerdp winpr freerdp-client --parallel $(nproc)
 
-          mkdir -p third_party/freerdp/lib third_party/freerdp/include
+          mkdir -p third_party/freerdp/lib \
+                   third_party/freerdp/include/freerdp \
+                   third_party/freerdp/include/winpr
           find /tmp/freerdp-build -name "*.a" | sort
           cp "$(find /tmp/freerdp-build -name 'libwinpr3.a')"          third_party/freerdp/lib/
           cp "$(find /tmp/freerdp-build -name 'libfreerdp3.a')"        third_party/freerdp/lib/
           cp "$(find /tmp/freerdp-build -name 'libfreerdp-client3.a')" third_party/freerdp/lib/
-          cp -r /tmp/freerdp/include/freerdp \
-            third_party/freerdp/include/freerdp3/
-          cp -r /tmp/freerdp-build/include/freerdp \
-            third_party/freerdp/include/freerdp3/ 2>/dev/null || true
+          # Headers: source tree (freerdp/ and winpr/ subdirs)
+          cp -r /tmp/freerdp/include/freerdp/. third_party/freerdp/include/freerdp/
+          cp -r /tmp/freerdp/winpr/include/winpr/. third_party/freerdp/include/winpr/
+          # Build-generated headers (config.h, version.h, etc.)
+          cp -r /tmp/freerdp-build/include/freerdp/. \
+            third_party/freerdp/include/freerdp/ 2>/dev/null || true
+          cp -r /tmp/freerdp-build/winpr/include/winpr/. \
+            third_party/freerdp/include/winpr/ 2>/dev/null || true
 
       - name: Generate Gradle wrapper jar
         run: |

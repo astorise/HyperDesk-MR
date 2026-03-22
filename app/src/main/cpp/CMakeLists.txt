@@ -87,7 +87,11 @@ target_include_directories(hyperdesk_mr PRIVATE
     "${OPENXR_SDK_ROOT}/include"
     "${OPENXR_SDK_ROOT}/include/openxr"
     "${FREERDP_ROOT}/include"
-    "${FREERDP_ROOT}/include/freerdp3"
+)
+
+target_compile_definitions(hyperdesk_mr PRIVATE
+    XR_USE_GRAPHICS_API_VULKAN
+    XR_USE_PLATFORM_ANDROID
 )
 
 target_link_libraries(hyperdesk_mr

@@ -9,13 +9,13 @@
 
 class XrContext;
 
-// XrSwapchain manages one XrSwapchainKHR for a single monitor slot.
+// HdSwapchain manages one XrSwapchain (OpenXR handle) for a single monitor slot.
 // It supports binding an AHardwareBuffer as external Vulkan memory
 // (zero-copy path from AImageReader → VkImage → OpenXR compositor).
-class XrSwapchain {
+class HdSwapchain {
 public:
-    XrSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32_t monitorIndex);
-    ~XrSwapchain();
+    HdSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32_t monitorIndex);
+    ~HdSwapchain();
 
     // Per-frame acquire/wait/release cycle.
     bool AcquireImage(uint32_t& imageIndex);
@@ -29,7 +29,7 @@ public:
     // Returns the sub-image descriptor used in XrCompositionLayerQuad.
     XrSwapchainSubImage GetSubImage() const;
 
-    XrSwapchainKHR GetHandle()  const { return swapchain_; }
+    XrSwapchain    GetHandle()  const { return swapchain_; }
     uint32_t       GetWidth()   const { return width_; }
     uint32_t       GetHeight()  const { return height_; }
 
@@ -38,7 +38,7 @@ private:
     uint32_t       width_;
     uint32_t       height_;
     uint32_t       monitorIndex_;
-    XrSwapchainKHR swapchain_ = XR_NULL_HANDLE;
+    XrSwapchain    swapchain_ = XR_NULL_HANDLE;
 
     struct SlotMemory {
         VkImage        image      = VK_NULL_HANDLE;

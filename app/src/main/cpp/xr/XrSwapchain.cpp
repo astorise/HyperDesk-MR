@@ -5,7 +5,7 @@
 
 #include <vulkan/vulkan_android.h>
 
-XrSwapchain::XrSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32_t monitorIndex)
+HdSwapchain::XrSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32_t monitorIndex)
     : ctx_(ctx), width_(width), height_(height), monitorIndex_(monitorIndex) {
 
     XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
@@ -32,7 +32,7 @@ XrSwapchain::XrSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32
     LOGD("XrSwapchain[%u] created: %u images %ux%u", monitorIndex_, imageCount, width_, height_);
 }
 
-XrSwapchain::~XrSwapchain() {
+HdSwapchain::~XrSwapchain() {
     // Free any externally-bound device memory.
     VkDevice dev = ctx_.GetVkDevice();
     for (auto& slot : slotMemory_) {
@@ -41,24 +41,24 @@ XrSwapchain::~XrSwapchain() {
     if (swapchain_ != XR_NULL_HANDLE) xrDestroySwapchain(swapchain_);
 }
 
-bool XrSwapchain::AcquireImage(uint32_t& imageIndex) {
+bool HdSwapchain::AcquireImage(uint32_t& imageIndex) {
     XrSwapchainImageAcquireInfo acquireInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
     XrResult result = xrAcquireSwapchainImage(swapchain_, &acquireInfo, &imageIndex);
     return XR_SUCCEEDED(result);
 }
 
-bool XrSwapchain::WaitImage() {
+bool HdSwapchain::WaitImage() {
     XrSwapchainImageWaitInfo waitInfo{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
     waitInfo.timeout = XR_INFINITE_DURATION;
     return XR_SUCCEEDED(xrWaitSwapchainImage(swapchain_, &waitInfo));
 }
 
-bool XrSwapchain::ReleaseImage() {
+bool HdSwapchain::ReleaseImage() {
     XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     return XR_SUCCEEDED(xrReleaseSwapchainImage(swapchain_, &releaseInfo));
 }
 
-void XrSwapchain::BindExternalHardwareBuffer(uint32_t imageIndex, AHardwareBuffer* ahb) {
+void HdSwapchain::BindExternalHardwareBuffer(uint32_t imageIndex, AHardwareBuffer* ahb) {
     VkDevice         dev   = ctx_.GetVkDevice();
     VkPhysicalDevice phys  = ctx_.GetVkPhysDevice();
     VkImage          image = images_[imageIndex].image;
@@ -117,7 +117,7 @@ void XrSwapchain::BindExternalHardwareBuffer(uint32_t imageIndex, AHardwareBuffe
     LOGD("XrSwapchain[%u] slot %u bound to AHardwareBuffer", monitorIndex_, imageIndex);
 }
 
-XrSwapchainSubImage XrSwapchain::GetSubImage() const {
+XrSwapchainSubImage HdSwapchain::GetSubImage() const {
     XrSwapchainSubImage sub{};
     sub.swapchain             = swapchain_;
     sub.imageRect.offset      = {0, 0};

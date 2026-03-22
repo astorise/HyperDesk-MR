@@ -23,9 +23,9 @@ XrCompositor::XrCompositor(
     : ctx_(ctx), passthrough_(passthrough), layout_(layout),
       culler_(culler), bridges_(bridges), decoders_(decoders) {
 
-    // Create one XrSwapchain per monitor slot.
+    // Create one HdSwapchain per monitor slot.
     for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
-        swapchains_[i] = std::make_unique<XrSwapchain>(ctx_, kMonitorWidth, kMonitorHeight, i);
+        swapchains_[i] = std::make_unique<HdSwapchain>(ctx_, kMonitorWidth, kMonitorHeight, i);
         slotBound_[i]  = false;
     }
     LOGI("XrCompositor: %u swapchains created", MonitorLayout::kMaxMonitors);

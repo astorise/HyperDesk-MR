@@ -9,7 +9,7 @@
 
 class XrContext;
 class XrPassthrough;
-class XrSwapchain;
+class HdSwapchain;
 class MonitorLayout;
 class FrustumCuller;
 class MediaCodecDecoder;
@@ -45,7 +45,7 @@ private:
     std::array<MediaCodecDecoder*, 16>                    decoders_;
 
     // One swapchain per monitor.
-    std::array<std::unique_ptr<XrSwapchain>, 16> swapchains_;
+    std::array<std::unique_ptr<HdSwapchain>, 16> swapchains_;
 
     // Per-slot flag: has the AHardwareBuffer been bound to swapchain memory yet?
     // We bind once per slot on first use.
