@@ -1,4 +1,7 @@
-## ADDED Requirements
+## Purpose
+Establish and manage the OpenXR session lifecycle, including Vulkan backend initialization, passthrough extension activation, and per-frame composition layer submission.
+
+## Requirements
 
 ### Requirement: OpenXR session initializes with Vulkan backend
 The application SHALL create a valid `XrInstance` and `XrSession` using the Vulkan graphics API as the backend, requesting all required extensions at instance creation time.

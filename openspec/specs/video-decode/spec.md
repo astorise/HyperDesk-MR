@@ -1,4 +1,7 @@
-## ADDED Requirements
+## Purpose
+Decode RDP video streams using hardware-accelerated AMediaCodec and deliver decoded frames to the OpenXR swapchain via a zero-copy GPU path.
+
+## Requirements
 
 ### Requirement: Video streams are decoded via hardware-accelerated AMediaCodec
 The application SHALL create one `AMediaCodec` instance per active monitor, configured for H.264/AVC decoding in low-latency mode using the device's hardware decoder.

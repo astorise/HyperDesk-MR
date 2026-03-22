@@ -1,4 +1,7 @@
-## ADDED Requirements
+## Purpose
+Establish an RDP connection to a Windows host using FreeRDP and negotiate a 16-monitor display layout over the Display Control virtual channel.
+
+## Requirements
 
 ### Requirement: Client connects to a Windows host via RDP using FreeRDP
 The application SHALL establish an RDP connection to a Windows host using the FreeRDP 3.x library compiled as a static library for Android, running its event loop on a dedicated network thread.

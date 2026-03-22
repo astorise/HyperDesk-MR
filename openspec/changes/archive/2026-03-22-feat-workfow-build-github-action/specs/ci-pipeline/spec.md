@@ -1,0 +1,19 @@
+## ADDED Requirements
+
+### Requirement: GitHub Actions workflow builds the Android APK on push and pull request
+The repository SHALL include a `.github/workflows/build.yml` workflow that triggers on `push` and `pull_request` events targeting the `main` branch, checks out the code, sets up JDK 17, makes the Gradle wrapper executable, runs `./gradlew assembleDebug`, and uploads the resulting APK as a build artifact using `actions/upload-artifact@v4`.
+
+#### Scenario: Workflow runs on push to main and produces a downloadable APK artifact
+- **WHEN** a commit is pushed to the `main` branch
+- **THEN** the GitHub Actions `build` job completes successfully and the debug APK is available as a downloadable workflow artifact
+
+#### Scenario: Workflow runs on pull request and validates the build
+- **WHEN** a pull request targeting `main` is opened or updated
+- **THEN** the `build` job executes `./gradlew assembleDebug` without error and the APK artifact is uploaded
+
+### Requirement: README documents the sideloading installation procedure
+The `README.md` SHALL contain a section titled `## Installation (Sideloading)` that covers enabling Developer Mode on Meta Quest 3, installing via ADB (`adb install -r <path>`), and installing via Meta Quest Developer Hub (MQDH) drag-and-drop.
+
+#### Scenario: README contains the sideloading section with ADB and MQDH instructions
+- **WHEN** a user opens `README.md`
+- **THEN** they find an "Installation (Sideloading)" section that includes the Developer Mode prerequisite, the exact `adb install` command, and MQDH drag-and-drop instructions
