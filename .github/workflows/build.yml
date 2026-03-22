@@ -42,7 +42,10 @@ jobs:
           cmake --build /tmp/openxr-build --target openxr_loader --parallel $(nproc)
 
           mkdir -p third_party/openxr/include/openxr third_party/openxr/libs/android.arm64-v8a
+          # Static headers from source tree
           cp -r /tmp/OpenXR-SDK-Source-release-1.1.43/include/openxr/. third_party/openxr/include/openxr/
+          # Generated headers (openxr.h, openxr_platform.h, etc.) from build dir
+          cp -r /tmp/openxr-build/include/openxr/. third_party/openxr/include/openxr/ 2>/dev/null || true
           cp /tmp/openxr-build/src/loader/libopenxr_loader.so \
             third_party/openxr/libs/android.arm64-v8a/
 
