@@ -21,8 +21,60 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Accept Android SDK licenses
-        run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
+      - name: Accept Android SDK licenses and install NDK r29
+        run: |
+          yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
+          "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" "ndk;29.0.13599879"
+
+      - name: Build third-party dependencies
+        run: |
+          set -e
+          NDK="$ANDROID_SDK_ROOT/ndk/29.0.13599879"
+          TOOLCHAIN="$NDK/build/cmake/android.toolchain.cmake"
+          ANDROID_ARGS="-DCMAKE_TOOLCHAIN_FILE=$TOOLCHAIN -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-32 -DCMAKE_BUILD_TYPE=Release"
+
+          # ── OpenXR loader ────────────────────────────────────────────────────
+          curl -fL https://github.com/KhronosGroup/OpenXR-SDK-Source/archive/refs/tags/release-1.1.43.tar.gz \
+            | tar xz -C /tmp/
+          cmake -S /tmp/OpenXR-SDK-Source-release-1.1.43 -B /tmp/openxr-build \
+            $ANDROID_ARGS -DDYNAMIC_LOADER=ON -DBUILD_TESTS=OFF \
+            -DBUILD_CONFORMANCE_TESTS=OFF -DBUILD_API_LAYERS=OFF
+          cmake --build /tmp/openxr-build --target openxr_loader --parallel $(nproc)
+
+          mkdir -p third_party/openxr/include/openxr third_party/openxr/libs/android.arm64-v8a
+          cp -r /tmp/OpenXR-SDK-Source-release-1.1.43/include/openxr/. third_party/openxr/include/openxr/
+          cp /tmp/openxr-build/src/loader/libopenxr_loader.so \
+            third_party/openxr/libs/android.arm64-v8a/
+
+          # ── FreeRDP 3 ────────────────────────────────────────────────────────
+          # Prebuilt OpenSSL for Android (required by FreeRDP)
+          git clone --depth=1 https://github.com/KDAB/android_openssl.git /tmp/android_openssl
+          OPENSSL_PREBUILT=/tmp/android_openssl/ssl_3
+          # OpenSSL source for headers only
+          curl -fL https://github.com/openssl/openssl/archive/refs/tags/openssl-3.3.3.tar.gz \
+            | tar xz -C /tmp/
+          OPENSSL_INC=/tmp/openssl-openssl-3.3.3/include
+
+          git clone --depth=1 --branch 3.8.0 https://github.com/FreeRDP/FreeRDP.git /tmp/freerdp
+          cmake -S /tmp/freerdp -B /tmp/freerdp-build \
+            $ANDROID_ARGS \
+            -DOPENSSL_INCLUDE_DIR="$OPENSSL_INC" \
+            -DOPENSSL_SSL_LIBRARY="$OPENSSL_PREBUILT/lib64/libssl_3.so" \
+            -DOPENSSL_CRYPTO_LIBRARY="$OPENSSL_PREBUILT/lib64/libcrypto_3.so" \
+            -DWITH_SAMPLE=OFF -DWITH_CLIENT=OFF -DWITH_SERVER=OFF \
+            -DBUILD_SHARED_LIBS=OFF -DWITH_JPEG=OFF -DWITH_FFMPEG=OFF \
+            -DWITH_OPUS=OFF -DWITH_WEBVIEW=OFF -DWITH_SWSCALE=OFF
+          cmake --build /tmp/freerdp-build \
+            --target freerdp3 freerdp-client3 winpr3 --parallel $(nproc)
+
+          mkdir -p third_party/freerdp/lib third_party/freerdp/include
+          cp /tmp/freerdp-build/libwinpr/libwinpr3.a         third_party/freerdp/lib/
+          cp /tmp/freerdp-build/libfreerdp/libfreerdp3.a     third_party/freerdp/lib/
+          cp /tmp/freerdp-build/client/libfreerdp-client3.a  third_party/freerdp/lib/
+          cp -r /tmp/freerdp/include/freerdp \
+            third_party/freerdp/include/freerdp3/
+          cp -r /tmp/freerdp-build/include/freerdp \
+            third_party/freerdp/include/freerdp3/ 2>/dev/null || true
 
       - name: Generate Gradle wrapper jar
         run: |

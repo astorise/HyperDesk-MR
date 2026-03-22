@@ -17,9 +17,9 @@ add_compile_options(
 add_link_options(-Wl,--gc-sections)
 
 # ── Paths to third-party dependencies ─────────────────────────────────────────
-# Resolve relative to the repo root (7 levels up from cpp/)
+# Resolve relative to the repo root (4 levels up from app/src/main/cpp/)
 get_filename_component(REPO_ROOT
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../../../.."
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../.."
     ABSOLUTE)
 
 set(THIRD_PARTY_DIR   "${REPO_ROOT}/third_party")
