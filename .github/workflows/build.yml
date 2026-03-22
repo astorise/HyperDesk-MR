@@ -56,6 +56,9 @@ jobs:
           sudo apt-get install -y libssl-dev
           NDK_SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
           sudo cp -r /usr/include/openssl "$NDK_SYSROOT/usr/include/"
+          # opensslconf.h is in a multiarch path on Ubuntu 24.04
+          sudo cp /usr/include/x86_64-linux-gnu/openssl/*.h \
+            "$NDK_SYSROOT/usr/include/openssl/" 2>/dev/null || true
           OPENSSL_INC="$NDK_SYSROOT/usr/include"
 
           git clone --depth=1 --branch 3.8.0 https://github.com/FreeRDP/FreeRDP.git /tmp/freerdp
