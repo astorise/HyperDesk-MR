@@ -21,11 +21,8 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Set up Android NDK r29
-        uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r29
-          add-to-path: false
+      - name: Accept Android SDK licenses
+        run: yes | "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" --licenses 2>/dev/null || true
 
       - name: Generate Gradle wrapper jar
         run: |
