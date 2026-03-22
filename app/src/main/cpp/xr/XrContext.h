@@ -1,8 +1,10 @@
 #pragma once
 
+// openxr_platform.h requires platform headers to be included before it
+#include <jni.h>
+#include <vulkan/vulkan.h>
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
-#include <vulkan/vulkan.h>
 #include <android_native_app_glue.h>
 
 #include <array>
