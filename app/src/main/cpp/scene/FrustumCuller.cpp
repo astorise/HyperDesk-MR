@@ -8,8 +8,7 @@
 // Quest 3 approximate horizontal half-FOV in degrees.
 static constexpr float kHalfFovDeg = 55.0f;
 
-FrustumCuller::FrustumCuller(float fovSlackRadians)
-    : fovSlack_(fovSlackRadians) {
+FrustumCuller::FrustumCuller(float fovSlackRadians) {
     const float halfFovRad = kHalfFovDeg * (M_PI / 180.0f);
     cosThreshold_ = std::cos(halfFovRad + fovSlackRadians);
     // Initialise all hysteresis counters to "already visible."

@@ -36,8 +36,6 @@ public:
                    std::array<MediaCodecDecoder*, 16>& decoders);
 
 private:
-    float   fovSlack_;
-
     // cos(halfFovDeg + slack) — precomputed in the constructor.
     // Quest 3 horizontal half-FOV ≈ 55°; we use the larger axis as the cone radius.
     float   cosThreshold_;

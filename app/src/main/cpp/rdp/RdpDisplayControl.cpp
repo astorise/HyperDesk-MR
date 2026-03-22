@@ -16,7 +16,7 @@ void RdpDisplayControl::Attach(DispClientContext* ctx) {
     ctx_->custom = this;  // store back-pointer for the static callback
 
     // Register the CAPS callback.
-    ctx_->DispCaps = OnDisplayControlCaps;
+    ctx_->DisplayControlCaps = OnDisplayControlCaps;
     LOGI("DisplayControl: channel attached");
 }
 

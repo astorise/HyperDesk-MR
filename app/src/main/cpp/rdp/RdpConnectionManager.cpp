@@ -50,7 +50,7 @@ bool RdpConnectionManager::Connect(const ConnectionParams& params) {
     // Register channel connect callback via PubSub (FreeRDP 3.x).
     PubSub_SubscribeChannelConnected(instance_->context->pubSub, OnChannelsConnected);
 
-    SetupSettings(freerdp_get_settings(instance_), params);
+    SetupSettings(instance_->context->settings, params);
 
     // Run FreeRDP event loop on a dedicated thread.
     rdpThread_ = std::thread([this]() { RunEventLoop(); });
@@ -81,7 +81,7 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
 
 void RdpConnectionManager::RunEventLoop() {
     LOGI("RDP thread: connecting to %s",
-         freerdp_settings_get_string(freerdp_get_settings(instance_), FreeRDP_ServerHostname));
+         freerdp_settings_get_string(instance_->context->settings, FreeRDP_ServerHostname));
 
     if (!freerdp_connect(instance_)) {
         LOGE("freerdp_connect() failed");
@@ -121,11 +121,11 @@ void RdpConnectionManager::Disconnect() {
 
 BOOL RdpConnectionManager::OnPreConnect(freerdp* instance) {
     LOGI("RDP: OnPreConnect");
-    freerdp_client_load_addins(instance->context->channels, freerdp_get_settings(instance));
+    freerdp_client_load_addins(instance->context->channels, instance->context->settings);
     return TRUE;
 }
 
-BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
+BOOL RdpConnectionManager::OnPostConnect(freerdp* /*instance*/) {
     LOGI("RDP: OnPostConnect");
     return TRUE;
 }
