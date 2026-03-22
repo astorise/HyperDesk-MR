@@ -96,6 +96,13 @@ jobs:
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
 
+      - name: Verify third-party artifacts
+        run: |
+          echo "=== OpenXR ==="
+          find third_party/openxr -type f | sort
+          echo "=== FreeRDP ==="
+          find third_party/freerdp -type f | sort
+
       - name: Build debug APK
         run: ./gradlew assembleDebug
 

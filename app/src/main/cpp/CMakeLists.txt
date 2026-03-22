@@ -39,6 +39,8 @@ endif()
 
 add_library(native_app_glue STATIC ${GLUE_SRC})
 target_include_directories(native_app_glue PUBLIC ${GLUE_INC})
+# NDK glue source has unused-parameter warnings; don't apply our strict flags
+set_target_properties(native_app_glue PROPERTIES COMPILE_OPTIONS "")
 
 # ── Android NDK built-in libraries ────────────────────────────────────────────
 find_library(log-lib     log)
