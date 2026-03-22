@@ -30,6 +30,7 @@ jobs:
       - name: Generate Gradle wrapper jar
         run: |
           mkdir /tmp/wg
+          touch /tmp/wg/settings.gradle
           cd /tmp/wg && gradle wrapper --gradle-version 8.9
           cp /tmp/wg/gradle/wrapper/gradle-wrapper.jar "$GITHUB_WORKSPACE/gradle/wrapper/"
 
