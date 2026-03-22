@@ -51,9 +51,12 @@ jobs:
           git clone --depth=1 https://github.com/KDAB/android_openssl.git /tmp/android_openssl
           OPENSSL_PREBUILT=/tmp/android_openssl/ssl_3
 
-          # OpenSSL headers (system package has configuration.h pre-generated)
+          # OpenSSL headers: install then copy into NDK sysroot so the cross-
+          # compiler finds them natively (avoids host vs. sysroot header conflict)
           sudo apt-get install -y libssl-dev
-          OPENSSL_INC=/usr/include
+          NDK_SYSROOT="$NDK/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+          sudo cp -r /usr/include/openssl "$NDK_SYSROOT/usr/include/"
+          OPENSSL_INC="$NDK_SYSROOT/usr/include"
 
           git clone --depth=1 --branch 3.8.0 https://github.com/FreeRDP/FreeRDP.git /tmp/freerdp
           cmake -S /tmp/freerdp -B /tmp/freerdp-build \
@@ -61,8 +64,6 @@ jobs:
             -DOPENSSL_INCLUDE_DIR="$OPENSSL_INC" \
             -DOPENSSL_SSL_LIBRARY="$OPENSSL_PREBUILT/lib64/libssl_3.so" \
             -DOPENSSL_CRYPTO_LIBRARY="$OPENSSL_PREBUILT/lib64/libcrypto_3.so" \
-            "-DCMAKE_C_FLAGS=-isystem $OPENSSL_INC" \
-            "-DCMAKE_CXX_FLAGS=-isystem $OPENSSL_INC" \
             -DWITH_SAMPLE=OFF -DWITH_CLIENT=OFF -DWITH_SERVER=OFF \
             -DBUILD_SHARED_LIBS=OFF -DWITH_JPEG=OFF -DWITH_FFMPEG=OFF \
             -DWITH_OPUS=OFF -DWITH_WEBVIEW=OFF -DWITH_SWSCALE=OFF \
