@@ -3,8 +3,6 @@
 #include "../util/Logger.h"
 
 #include <freerdp/channels/channels.h>
-#include <freerdp/gdi/gdi.h>
-#include <freerdp/client/channels.h>
 
 #include <cstring>
 
@@ -119,9 +117,8 @@ void RdpConnectionManager::Disconnect() {
 
 // ── Static callbacks ──────────────────────────────────────────────────────────
 
-BOOL RdpConnectionManager::OnPreConnect(freerdp* instance) {
+BOOL RdpConnectionManager::OnPreConnect(freerdp* /*instance*/) {
     LOGI("RDP: OnPreConnect");
-    freerdp_client_load_addins(instance->context->channels, instance->context->settings);
     return TRUE;
 }
 
