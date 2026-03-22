@@ -77,9 +77,10 @@ jobs:
             --target freerdp winpr freerdp-client --parallel $(nproc)
 
           mkdir -p third_party/freerdp/lib third_party/freerdp/include
-          cp /tmp/freerdp-build/libwinpr/libwinpr3.a         third_party/freerdp/lib/
-          cp /tmp/freerdp-build/libfreerdp/libfreerdp3.a     third_party/freerdp/lib/
-          cp /tmp/freerdp-build/client/libfreerdp-client3.a  third_party/freerdp/lib/
+          find /tmp/freerdp-build -name "*.a" | sort
+          cp "$(find /tmp/freerdp-build -name 'libwinpr3.a')"          third_party/freerdp/lib/
+          cp "$(find /tmp/freerdp-build -name 'libfreerdp3.a')"        third_party/freerdp/lib/
+          cp "$(find /tmp/freerdp-build -name 'libfreerdp-client3.a')" third_party/freerdp/lib/
           cp -r /tmp/freerdp/include/freerdp \
             third_party/freerdp/include/freerdp3/
           cp -r /tmp/freerdp-build/include/freerdp \
