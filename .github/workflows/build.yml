@@ -27,10 +27,11 @@ jobs:
           ndk-version: r29
           add-to-path: false
 
-      - name: Set up Gradle 8.4
-        uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.4'
+      - name: Generate Gradle wrapper jar
+        run: |
+          mkdir /tmp/wg
+          cd /tmp/wg && gradle wrapper --gradle-version 8.9
+          cp /tmp/wg/gradle/wrapper/gradle-wrapper.jar "$GITHUB_WORKSPACE/gradle/wrapper/"
 
       - name: Make Gradle wrapper executable
         run: chmod +x gradlew
