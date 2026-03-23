@@ -1,7 +1,4 @@
-## Purpose
-Establish an RDP connection to a Windows host using FreeRDP and negotiate a 16-monitor display layout over the Display Control virtual channel.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Client connects to a Windows host via RDP using FreeRDP
 The application SHALL establish an RDP connection to a Windows host using the FreeRDP 3.x library compiled as a static library for Android, running its event loop on a dedicated network thread. Session settings SHALL be configured via `instance->context->settings` using the `freerdp_settings_set_*` API. Channel discovery SHALL use `PubSub_SubscribeChannelConnected()` with a callback of signature `(void* context, const ChannelConnectedEventArgs* e)`; virtual channel interfaces SHALL be retrieved from `e->pInterface`.
