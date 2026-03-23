@@ -1,4 +1,5 @@
-# OpenSSL Android Packaging
+## Purpose
+Package OpenSSL shared libraries into the APK and locate them dynamically during CI to satisfy FreeRDP's OpenSSL symbol dependencies.
 
 ## Requirements
 

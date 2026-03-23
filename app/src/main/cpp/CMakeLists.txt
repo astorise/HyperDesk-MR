@@ -90,6 +90,7 @@ add_library(hyperdesk_mr SHARED
     codec/CodecSurfaceBridge.cpp
     scene/MonitorLayout.cpp
     scene/FrustumCuller.cpp
+    scene/VirtualMonitor.cpp
 )
 
 target_include_directories(hyperdesk_mr PRIVATE

@@ -29,6 +29,10 @@ public:
     // Non-blocking: returns false if no input buffer is currently available.
     bool SubmitFrame(const uint8_t* data, size_t size, int64_t presentationTimeUs);
 
+    // Optional: call before Configure() to put the codec in async notification mode.
+    // In async mode SubmitFrame() must not be used; input is fed from the callback.
+    void EnableAsyncCallbacks(const AMediaCodecOnAsyncNotifyCallback& cb, void* userdata);
+
     // Pause/resume codec to save GPU cycles (called by FrustumCuller).
     void Pause();
     void Resume();
@@ -36,12 +40,19 @@ public:
     bool IsRunning()    const { return running_; }
     bool IsConfigured() const { return configured_; }
 
+    // Raw codec handle — exposed for async callback paths that need to feed buffers.
+    AMediaCodec* GetCodec() const { return codec_; }
+
 private:
     ANativeWindow* outputSurface_  = nullptr;
     uint32_t       monitorIndex_;
     AMediaCodec*   codec_          = nullptr;
     bool           running_        = false;
     bool           configured_     = false;
+
+    bool                            useAsync_      = false;
+    AMediaCodecOnAsyncNotifyCallback asyncCb_{};
+    void*                            asyncUserdata_ = nullptr;
 
     // Apply vendor-specific and standard low-latency keys to the format.
     void ApplyLowLatencyKeys(AMediaFormat* format);

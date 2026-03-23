@@ -22,11 +22,31 @@ MediaCodecDecoder::~MediaCodecDecoder() {
     }
 }
 
+void MediaCodecDecoder::EnableAsyncCallbacks(
+        const AMediaCodecOnAsyncNotifyCallback& cb, void* userdata) {
+    asyncCb_       = cb;
+    asyncUserdata_ = userdata;
+    useAsync_      = true;
+}
+
 bool MediaCodecDecoder::Configure(uint32_t width, uint32_t height) {
     codec_ = AMediaCodec_createDecoderByType(kMimeTypeH264);
     if (!codec_) {
         LOGE("Decoder[%u]: AMediaCodec_createDecoderByType failed", monitorIndex_);
         return false;
+    }
+
+    // Async callbacks must be registered before AMediaCodec_configure.
+    if (useAsync_) {
+        media_status_t asyncStatus =
+            AMediaCodec_setAsyncNotifyCallback(codec_, asyncCb_, asyncUserdata_);
+        if (asyncStatus != AMEDIA_OK) {
+            LOGE("Decoder[%u]: AMediaCodec_setAsyncNotifyCallback failed: %d",
+                 monitorIndex_, asyncStatus);
+            AMediaCodec_delete(codec_);
+            codec_ = nullptr;
+            return false;
+        }
     }
 
     AMediaFormat* format = AMediaFormat_new();

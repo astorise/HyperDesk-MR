@@ -1,6 +1,6 @@
 #include "FrustumCuller.h"
 #include "MonitorLayout.h"
-#include "../codec/MediaCodecDecoder.h"
+#include "VirtualMonitor.h"
 #include "../util/Logger.h"
 
 #include <cmath>
@@ -36,12 +36,12 @@ FrustumCuller::CullResult FrustumCuller::TestMonitor(
 
 void FrustumCuller::UpdateAll(std::span<const XrView, 2> views,
                                const MonitorLayout& layout,
-                               std::array<MediaCodecDecoder*, 16>& decoders) {
+                               std::array<VirtualMonitor*, 16>& monitors) {
     XrVector3f eyePos{}, forward{};
     ComputeCyclopsView(views, eyePos, forward);
 
     for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
-        if (!decoders[i]) continue;
+        if (!monitors[i]) continue;
 
         const MonitorDescriptor& m = layout.GetMonitor(i);
         const XrVector3f& pos = m.worldPose.position;
@@ -51,18 +51,16 @@ void FrustumCuller::UpdateAll(std::span<const XrView, 2> views,
         bool visible = (dp >= cosThreshold_);
 
         if (visible) {
-            // Reset hysteresis and ensure decoder is running.
             hysteresis_[i] = kHysteresisFrames;
-            if (!decoders[i]->IsRunning()) {
-                decoders[i]->Resume();
+            if (!monitors[i]->IsRunning()) {
+                monitors[i]->ResumeDecoder();
                 LOGD("FrustumCuller: monitor %u resumed (dp=%.3f)", i, dp);
             }
         } else {
-            // Count down before actually pausing to smooth over edge-of-FOV cases.
             if (hysteresis_[i] > 0) {
                 --hysteresis_[i];
-            } else if (decoders[i]->IsRunning()) {
-                decoders[i]->Pause();
+            } else if (monitors[i]->IsRunning()) {
+                monitors[i]->PauseDecoder();
                 LOGD("FrustumCuller: monitor %u paused (dp=%.3f)", i, dp);
             }
         }

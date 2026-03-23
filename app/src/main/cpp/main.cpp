@@ -6,10 +6,9 @@
 #include "xr/XrCompositor.h"
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
-#include "codec/MediaCodecDecoder.h"
-#include "codec/CodecSurfaceBridge.h"
 #include "scene/MonitorLayout.h"
 #include "scene/FrustumCuller.h"
+#include "scene/VirtualMonitor.h"
 
 #include <array>
 #include <memory>
@@ -23,8 +22,11 @@ struct AppState {
     std::unique_ptr<FrustumCuller>        frustumCuller;
     std::unique_ptr<RdpDisplayControl>    displayControl;
     std::unique_ptr<RdpConnectionManager> rdpManager;
-    std::array<std::unique_ptr<CodecSurfaceBridge>, MonitorLayout::kMaxMonitors> bridges;
-    std::array<std::unique_ptr<MediaCodecDecoder>,  MonitorLayout::kMaxMonitors> decoders;
+
+    // One VirtualMonitor per slot — owns codec + surface bridge + swapchain.
+    std::array<std::unique_ptr<VirtualMonitor>, MonitorLayout::kMaxMonitors> monitors;
+    std::array<VirtualMonitor*, MonitorLayout::kMaxMonitors>                  monitorPtrs{};
+
     std::unique_ptr<XrCompositor>         compositor;
 
     bool running       = true;
@@ -60,14 +62,14 @@ void android_main(android_app* app) {
     app->userData  = &state;
     app->onAppCmd  = handle_app_cmd;
 
-    // ── Initialise subsystems ─────────────────────────────────────────────────
+    // ── Initialise OpenXR ────────────────────────────────────────────────────
     state.xrContext = std::make_unique<XrContext>(app);
     state.xrContext->CreateInstance();
     state.xrContext->CreateVulkanObjects();
     state.xrContext->CreateSession();
     state.xrContext->InitializePassthrough();
 
-    state.passthrough  = std::make_unique<XrPassthrough>(*state.xrContext);
+    state.passthrough = std::make_unique<XrPassthrough>(*state.xrContext);
     state.passthrough->Start();
 
     state.monitorLayout = std::make_unique<MonitorLayout>();
@@ -75,34 +77,29 @@ void android_main(android_app* app) {
 
     state.frustumCuller = std::make_unique<FrustumCuller>();
 
-    // Create one CodecSurfaceBridge and MediaCodecDecoder per monitor slot.
-    // Decoders start stopped; they are started when FreeRDP assigns a surface.
+    // ── Initialise VirtualMonitor objects ────────────────────────────────────
+    // Phase 1: codec + surface bridge (no XrSession dependency).
     for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
-        state.bridges[i] = std::make_unique<CodecSurfaceBridge>(1920, 1080, i);
-        state.decoders[i] = std::make_unique<MediaCodecDecoder>(
-            state.bridges[i]->GetCodecOutputSurface(), i);
-        state.decoders[i]->Configure(1920, 1080);
+        state.monitors[i] = std::make_unique<VirtualMonitor>(i, 1920, 1080);
+        state.monitors[i]->InitCodec();
+        // Phase 2: OpenXR swapchain (requires XrSession created above).
+        state.monitors[i]->InitXr(*state.xrContext);
+        state.monitorPtrs[i] = state.monitors[i].get();
     }
 
-    // RDP subsystem — connect in the background on its own thread.
+    // ── RDP subsystem ────────────────────────────────────────────────────────
     state.displayControl = std::make_unique<RdpDisplayControl>(*state.monitorLayout);
     state.rdpManager     = std::make_unique<RdpConnectionManager>(*state.displayControl);
 
-    // Build raw decoder pointers for XrCompositor.
-    std::array<MediaCodecDecoder*, MonitorLayout::kMaxMonitors> decoderPtrs{};
-    for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
-        decoderPtrs[i] = state.decoders[i].get();
-    }
-
+    // ── XrCompositor ─────────────────────────────────────────────────────────
     state.compositor = std::make_unique<XrCompositor>(
         *state.xrContext,
         *state.passthrough,
         *state.monitorLayout,
         *state.frustumCuller,
-        state.bridges,
-        decoderPtrs);
+        state.monitorPtrs);
 
-    // Connect to RDP server. Address/credentials would come from config in production.
+    // Connect to RDP server. Address/credentials come from config in production.
     RdpConnectionManager::ConnectionParams params{
         .hostname = "192.168.1.100",
         .port     = 3389,
@@ -114,7 +111,6 @@ void android_main(android_app* app) {
 
     // ── Main loop ─────────────────────────────────────────────────────────────
     while (state.running) {
-        // Process Android events.
         int events = 0;
         android_poll_source* source = nullptr;
         while (ALooper_pollOnce(0, nullptr, &events, reinterpret_cast<void**>(&source)) >= 0) {
@@ -127,14 +123,12 @@ void android_main(android_app* app) {
 
         if (!state.running) break;
 
-        // Process OpenXR events and drive session state machine.
         bool exitRequested = false;
         state.xrContext->PollEvents(exitRequested, state.sessionActive);
         if (exitRequested) break;
 
         if (!state.sessionActive) continue;
 
-        // Execute one render frame.
         XrFrameState frameState{XR_TYPE_FRAME_STATE};
         if (!state.xrContext->BeginFrame(frameState)) continue;
         state.compositor->RenderFrame(frameState);

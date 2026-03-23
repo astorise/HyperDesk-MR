@@ -1,4 +1,5 @@
-# CI Pipeline
+## Purpose
+Automate the Android APK build using GitHub Actions and document the sideloading installation procedure for Meta Quest 3.
 
 ## Requirements
 
