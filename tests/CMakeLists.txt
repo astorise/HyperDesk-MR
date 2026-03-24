@@ -41,6 +41,7 @@ add_executable(hyperdesk_tests
     test_MonitorLayout.cpp
     test_FrustumCuller.cpp
     test_RdpDisplayControl.cpp
+    test_RdpParser.cpp
     # Stub implementations (no-op Android NDK functions)
     stubs/android_stubs.cpp
     # Production sources under test

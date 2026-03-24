@@ -6,7 +6,7 @@
 #include <span>
 
 class MonitorLayout;
-class VirtualMonitor;
+class MediaCodecDecoder;
 
 // FrustumCuller performs a per-frame dot-product visibility test for each of
 // the 16 virtual monitors.  Monitors outside the headset's field of view have
@@ -29,11 +29,11 @@ public:
     CullResult TestMonitor(std::span<const XrView, 2> views,
                            const XrVector3f& monitorWorldPos) const;
 
-    // Test all 16 monitors and call PauseDecoder()/ResumeDecoder() on VirtualMonitors.
-    // monitors may contain null entries (uninitialised slots are skipped).
+    // Test all 16 monitors and call Pause()/Resume() on MediaCodecDecoders.
+    // decoders may contain null entries (uninitialised slots are skipped).
     void UpdateAll(std::span<const XrView, 2> views,
                    const MonitorLayout& layout,
-                   std::array<VirtualMonitor*, 16>& monitors);
+                   std::array<MediaCodecDecoder*, 16>& decoders);
 
 private:
     // cos(halfFovDeg + slack) — precomputed in the constructor.

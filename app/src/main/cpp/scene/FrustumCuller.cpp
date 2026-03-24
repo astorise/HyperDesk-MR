@@ -1,6 +1,6 @@
 #include "FrustumCuller.h"
 #include "MonitorLayout.h"
-#include "VirtualMonitor.h"
+#include "../codec/MediaCodecDecoder.h"
 #include "../util/Logger.h"
 
 #include <cmath>
@@ -36,12 +36,12 @@ FrustumCuller::CullResult FrustumCuller::TestMonitor(
 
 void FrustumCuller::UpdateAll(std::span<const XrView, 2> views,
                                const MonitorLayout& layout,
-                               std::array<VirtualMonitor*, 16>& monitors) {
+                               std::array<MediaCodecDecoder*, 16>& decoders) {
     XrVector3f eyePos{}, forward{};
     ComputeCyclopsView(views, eyePos, forward);
 
     for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
-        if (!monitors[i]) continue;
+        if (!decoders[i]) continue;
 
         const MonitorDescriptor& m = layout.GetMonitor(i);
         const XrVector3f& pos = m.worldPose.position;
@@ -52,15 +52,15 @@ void FrustumCuller::UpdateAll(std::span<const XrView, 2> views,
 
         if (visible) {
             hysteresis_[i] = kHysteresisFrames;
-            if (!monitors[i]->IsRunning()) {
-                monitors[i]->ResumeDecoder();
+            if (!decoders[i]->IsRunning()) {
+                decoders[i]->Resume();
                 LOGD("FrustumCuller: monitor %u resumed (dp=%.3f)", i, dp);
             }
         } else {
             if (hysteresis_[i] > 0) {
                 --hysteresis_[i];
-            } else if (monitors[i]->IsRunning()) {
-                monitors[i]->PauseDecoder();
+            } else if (decoders[i]->IsRunning()) {
+                decoders[i]->Pause();
                 LOGD("FrustumCuller: monitor %u paused (dp=%.3f)", i, dp);
             }
         }

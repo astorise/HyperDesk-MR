@@ -25,9 +25,27 @@ The application SHALL open the `Microsoft::Windows::RDS::DisplayControl` virtual
 - **WHEN** the server sends display control capabilities after the RDP session is established
 - **THEN** the `DisplayControlCaps` callback fires and the client sends a monitor layout response when `MaxNumMonitors >= 16`
 
+### Requirement: Client advertises H.264/AVC codec support via the GFX CapsAdvertise callback
+The application SHALL implement the `CapsAdvertise` callback on `RdpgfxClientContext` to negotiate H.264 encoding with the server. The callback SHALL advertise `RDPGFX_CAPVERSION_10` (or the appropriate version covering AVC420/AVC444) so that the server selects H.264 as the surface compression format for all subsequent GFX surface commands.
+
+#### Scenario: CapsAdvertise callback negotiates H.264 encoding with the server
+- **WHEN** the GFX pipeline channel is established and the server solicits codec capability
+- **THEN** the `CapsAdvertise` callback fires, the client advertises `RDPGFX_CAPVERSION_10` (AVC420/AVC444), and the server confirms H.264 as the active compression format for GFX surface data
+
 ### Requirement: Client sends a 4x4 monitor grid layout to the server
 The application SHALL send a monitor layout defining 16 logical monitors arranged in a 4 column × 4 row grid, each at 1920×1080 resolution, with non-overlapping pixel coordinates. The layout SHALL be sent via `DispClientContext::SendMonitorLayout(ctx, numMonitors, monitorsArray)`.
 
 #### Scenario: LAYOUT PDU defines 16 monitors in a 4x4 arrangement
 - **WHEN** the display control channel is ready and capability negotiation is complete
 - **THEN** `SendMonitorLayout` is called with 16 monitor entries whose `Left`, `Top`, `Width`, and `Height` fields describe a contiguous 4×4 grid with no gaps or overlaps
+
+### Requirement: 16-monitor layout coordinate calculation is covered by GTest unit tests
+The codebase SHALL include a `tests/DisplayManagerTests.cpp` file that uses Google Test to verify that the 4×4 monitor grid layout computation produces correct, non-overlapping pixel coordinates. Tests MUST verify that each of the 16 monitors has the expected `Left`, `Top`, `Width`, and `Height` values for a 1920×1080 grid, that no two monitor rectangles overlap, and that the total covered pixel area equals 16 × 1920 × 1080.
+
+#### Scenario: 4x4 grid layout generates 16 non-overlapping monitor rectangles
+- **WHEN** `DisplayManagerTests` invokes the layout computation with a 4-column × 4-row grid at 1920×1080 per monitor
+- **THEN** the resulting 16 entries have `Left` values cycling through 0, 1920, 3840, 5760 and `Top` values cycling through 0, 1080, 2160, 3240 with no overlapping rectangles
+
+#### Scenario: Total pixel coverage matches the expected area
+- **WHEN** `DisplayManagerTests` computes the union area of all 16 monitor rectangles
+- **THEN** the total equals exactly 33,177,600 pixels (16 × 1920 × 1080) with no gaps

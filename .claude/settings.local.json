@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(find openspec:*)"
+      "Bash(find openspec:*)",
+      "Read(//c/Users/astor/AppData/Roaming/npm/**)",
+      "Read(//c/Users/astor/AppData/Roaming/npm//**)",
+      "Bash(ls -la /c/Users/astor/Git/HyperDesk-MR/.agent/skills/openspec*)",
+      "Bash(find /c/Users/astor/AppData/Roaming/npm/node_modules/@fission-ai/openspec -type f -name *.js -o -name *.json -o -name *.md)"
     ]
   }
 }

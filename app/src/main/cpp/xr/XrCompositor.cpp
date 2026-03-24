@@ -4,6 +4,7 @@
 #include "../scene/MonitorLayout.h"
 #include "../scene/FrustumCuller.h"
 #include "../scene/VirtualMonitor.h"
+#include "../codec/MediaCodecDecoder.h"
 #include "../util/Logger.h"
 
 XrCompositor::XrCompositor(
@@ -32,7 +33,10 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
     }
 
     // Step 1: Frustum culling — pause/resume decoders for off-FOV monitors.
-    culler_.UpdateAll(std::span<const XrView, 2>(views), layout_, monitors_);
+    std::array<MediaCodecDecoder*, 16> decoders{};
+    for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i)
+        decoders[i] = monitors_[i] ? monitors_[i]->GetDecoder() : nullptr;
+    culler_.UpdateAll(std::span<const XrView, 2>(views), layout_, decoders);
 
     // Step 2: Build composition layers.
     uint32_t layerCount = 0;

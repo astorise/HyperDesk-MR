@@ -55,6 +55,9 @@ public:
     void ResumeDecoder();
     bool IsRunning() const;
 
+    // Returns the underlying decoder so the render loop can pass it to FrustumCuller::UpdateAll.
+    MediaCodecDecoder* GetDecoder() const { return decoder_.get(); }
+
 private:
     uint32_t monitorIndex_;
     uint32_t width_;

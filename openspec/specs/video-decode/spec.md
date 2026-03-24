@@ -32,9 +32,31 @@ The `VirtualMonitor` class SHALL configure `AMediaCodec` via `AMediaCodec_setAsy
 - **WHEN** any `AMediaCodec_*` function returns a value other than `AMEDIA_OK`
 - **THEN** the error-checking macro logs the specific status code to Android logcat under the `"HyperDeskMR"` tag and the application does not silently continue execution
 
+### Requirement: H.264 NAL units extracted from the FreeRDP GFX callback are injected into AMediaCodec input buffers
+The application SHALL extract the compressed H.264 bitstream (NAL units) from the FreeRDP `RdpgfxClientContext` surface-command or H.264-specific callback and copy it into the hardware decoder input memory via `AMediaCodec_dequeueInputBuffer` / `memcpy` / `AMediaCodec_queueInputBuffer`. When `AMediaCodec_dequeueInputBuffer` returns a timeout (no buffer available), the frame SHALL be dropped and the timeout SHALL be logged to Android logcat under the `"HyperDeskMR"` tag without crashing or stalling the network thread.
+
+#### Scenario: Compressed H.264 payload is extracted from FreeRDP and queued into AMediaCodec
+- **WHEN** the FreeRDP GFX callback delivers a surface command containing a compressed H.264 payload
+- **THEN** `AMediaCodec_dequeueInputBuffer` returns a valid buffer index, the payload is copied into the buffer via `memcpy`, and `AMediaCodec_queueInputBuffer` submits it to the hardware decoder
+
+#### Scenario: Input buffer dequeue timeout is logged and the frame is dropped gracefully
+- **WHEN** `AMediaCodec_dequeueInputBuffer` returns a timeout value indicating no input buffer is available
+- **THEN** the application logs the timeout to logcat under the `"HyperDeskMR"` tag, discards the current H.264 frame, and returns control to the FreeRDP network thread without blocking or crashing
+
 ### Requirement: AImageReader is configured for GPU sampling and bound as the decoder output surface
 The application SHALL create an `AImageReader` instance with usage flag `AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE`, acquire its `ANativeWindow`, assert its validity, and bind it as the output surface for the `AMediaCodec` instance, checking the bind result against `AMEDIA_OK`. The decoded frames MUST remain in GPU memory and SHALL NOT be mapped to CPU memory.
 
 #### Scenario: AImageReader surface is bound to AMediaCodec output
 - **WHEN** `VirtualMonitor` initializes its decoder
 - **THEN** `AImageReader_new` returns a valid reader, its `ANativeWindow` is non-null, and `AMediaCodec_configure` succeeds with that window as the output surface, keeping decoded frames on the GPU
+
+### Requirement: H.264 NAL unit extraction logic is covered by GTest unit tests
+The codebase SHALL include a `tests/RdpParserTests.cpp` file that uses Google Test to verify H.264 NAL unit extraction from mock RDP payloads. Tests MUST cover: correct identification of 3-byte start codes (`0x000001`), correct identification of 4-byte start codes (`0x00000001`), handling of multiple NAL units in a single buffer, and graceful handling of corrupted or truncated payloads without crashing.
+
+#### Scenario: Parser identifies a 4-byte H.264 start code in a mock payload
+- **WHEN** `RdpParserTests` feeds a buffer beginning with `0x00 0x00 0x00 0x01` to the NAL unit extractor
+- **THEN** the extractor identifies a valid NAL unit boundary at offset 0 and the test asserts the extracted unit length is correct
+
+#### Scenario: Parser handles a corrupted payload without crashing
+- **WHEN** `RdpParserTests` feeds a buffer with no valid start code to the NAL unit extractor
+- **THEN** the extractor returns zero NAL units and the test verifies this with `EXPECT_NO_FATAL_FAILURE`

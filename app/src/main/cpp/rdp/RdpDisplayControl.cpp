@@ -23,17 +23,15 @@ void RdpDisplayControl::Attach(DispClientContext* ctx) {
 // ── CAPS PDU callback (Task 4) ────────────────────────────────────────────────
 
 UINT RdpDisplayControl::OnDisplayControlCaps(DispClientContext* ctx,
-                                              UINT32 maxNumMonitors,
-                                              UINT32 maxMonitorAreaFactorA,
-                                              UINT32 /*maxMonitorAreaFactorB*/) {
+                                              DISPLAY_CONTROL_CAPS_PDU* caps) {
     auto* self = static_cast<RdpDisplayControl*>(ctx->custom);
-    self->maxMonitors_ = maxNumMonitors;
+    self->maxMonitors_ = caps->MaxNumMonitors;
 
     LOGI("DisplayControl: CAPS received — MaxNumMonitors=%u MaxMonitorArea=%u",
-         maxNumMonitors, maxMonitorAreaFactorA);
+         caps->MaxNumMonitors, caps->MaxMonitorAreaFactorA);
 
-    if (maxNumMonitors < 16) {
-        LOGE("DisplayControl: server supports only %u monitors, need 16", maxNumMonitors);
+    if (caps->MaxNumMonitors < 16) {
+        LOGE("DisplayControl: server supports only %u monitors, need 16", caps->MaxNumMonitors);
         return CHANNEL_RC_OK;
     }
 
@@ -49,11 +47,14 @@ UINT RdpDisplayControl::SendMonitorLayout() {
     }
 
     auto entries = BuildLayoutPDU();
-    const UINT32 numMonitors = static_cast<UINT32>(entries.size());
 
-    UINT result = ctx_->SendMonitorLayout(ctx_, numMonitors, entries.data());
+    DISPLAY_CONTROL_MONITOR_LAYOUT_PDU pdu{};
+    pdu.NumMonitors = static_cast<UINT32>(entries.size());
+    pdu.Monitors    = entries.data();
+
+    UINT result = ctx_->SendMonitorLayout(ctx_, &pdu);
     if (result == CHANNEL_RC_OK) {
-        LOGI("DisplayControl: LAYOUT PDU sent (%u monitors)", numMonitors);
+        LOGI("DisplayControl: LAYOUT PDU sent (%u monitors)", pdu.NumMonitors);
         layout_->SetAllActive();
     } else {
         LOGE("DisplayControl: SendMonitorLayout failed: %u", result);
