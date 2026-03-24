@@ -54,7 +54,7 @@ UINT RdpDisplayControl::SendMonitorLayout() {
                                           static_cast<UINT32>(entries.size()),
                                           entries.data());
     if (result == CHANNEL_RC_OK) {
-        LOGI("DisplayControl: LAYOUT PDU sent (%u monitors)", pdu.NumMonitors);
+        LOGI("DisplayControl: LAYOUT PDU sent (%zu monitors)", entries.size());
         layout_->SetAllActive();
     } else {
         LOGE("DisplayControl: SendMonitorLayout failed: %u", result);

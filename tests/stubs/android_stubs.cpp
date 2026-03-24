@@ -56,3 +56,9 @@ media_status_t AMediaCodec_queueInputBuffer(AMediaCodec*, size_t, size_t,
                                              size_t, int64_t, uint32_t) {
     return AMEDIA_OK;
 }
+
+media_status_t AMediaCodec_setAsyncNotifyCallback(AMediaCodec*,
+                                                   AMediaCodecOnAsyncNotifyCallback,
+                                                   void*) {
+    return AMEDIA_OK;
+}
