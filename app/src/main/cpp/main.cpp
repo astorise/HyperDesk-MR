@@ -89,7 +89,10 @@ void android_main(android_app* app) {
 
     // ── RDP subsystem ────────────────────────────────────────────────────────
     state.displayControl = std::make_unique<RdpDisplayControl>(*state.monitorLayout);
-    state.rdpManager     = std::make_unique<RdpConnectionManager>(*state.displayControl);
+    state.rdpManager     = std::make_unique<RdpConnectionManager>(
+        *state.displayControl,
+        state.monitorPtrs.data(),
+        static_cast<uint32_t>(state.monitorPtrs.size()));
 
     // ── XrCompositor ─────────────────────────────────────────────────────────
     state.compositor = std::make_unique<XrCompositor>(

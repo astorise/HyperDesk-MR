@@ -1,16 +1,23 @@
 #include "RdpConnectionManager.h"
 #include "RdpDisplayControl.h"
+#include "../scene/VirtualMonitor.h"
 #include "../util/Logger.h"
 
 #include <freerdp/channels/channels.h>
 
+#include <algorithm>
 #include <cstring>
 
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 
-RdpConnectionManager::RdpConnectionManager(RdpDisplayControl& displayControl)
-    : displayControl_(displayControl) {
-    std::memset(surfaceToMonitor_, 0, sizeof(surfaceToMonitor_));
+RdpConnectionManager::RdpConnectionManager(RdpDisplayControl& displayControl,
+                                             VirtualMonitor* const monitors[],
+                                             uint32_t monitorCount)
+    : displayControl_(displayControl),
+      monitorCount_(std::min(monitorCount, kMaxMonitors)) {
+    uint32_t count = std::min(monitorCount, kMaxMonitors);
+    for (uint32_t i = 0; i < count; ++i) monitors_[i] = monitors[i];
+    std::fill(std::begin(surfaceToMonitor_), std::end(surfaceToMonitor_), UINT32_MAX);
 }
 
 RdpConnectionManager::~RdpConnectionManager() {
@@ -154,6 +161,8 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
         ctx->gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
         if (ctx->gfx) {
             LOGI("RDP: RdpgfxClientContext obtained");
+            ctx->gfx->CapsAdvertise      = OnGfxCapsAdvertise;
+            ctx->gfx->SurfaceCommand     = OnGfxSurfaceCommand;
             ctx->gfx->CreateSurface      = OnGfxSurfaceCreated;
             ctx->gfx->StartFrame         = OnGfxStartFrame;
             ctx->gfx->MapSurfaceToOutput = OnGfxSurfaceToOutput;
@@ -167,12 +176,44 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
 
 // ── GFX callbacks ─────────────────────────────────────────────────────────────
 
+// Task 6: CapsAdvertise — log what's being advertised; H.264 is already requested
+// via FreeRDP_GfxH264 / FreeRDP_SupportGraphicsPipeline settings.
+UINT RdpConnectionManager::OnGfxCapsAdvertise(RdpgfxClientContext* /*gfx*/,
+                                               const RDPGFX_CAPS_ADVERTISE_PDU* caps) {
+    LOGI("RDP: GFX CapsAdvertise — advertising %u capability set(s) including H.264/AVC",
+         caps ? caps->capsSetCount : 0u);
+    return CHANNEL_RC_OK;
+}
+
+// Task 7: SurfaceCommand — extract the compressed H.264 payload and dispatch it.
+UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
+                                                const RDPGFX_SURFACE_COMMAND* cmd) {
+    if (cmd->codecId != RDPGFX_CODECID_AVC420 &&
+        cmd->codecId != RDPGFX_CODECID_AVC444) {
+        return CHANNEL_RC_OK;
+    }
+    auto* self = static_cast<RdpConnectionManager*>(gfx->custom);
+
+    const auto* avc = static_cast<const RDPGFX_AVC420_BITMAP_STREAM*>(cmd->extra);
+    if (!avc || avc->length == 0 || !avc->data) {
+        LOGW("RDP: GFX SurfaceCommand codecId=0x%04X: empty or null AVC stream, skipping",
+             cmd->codecId);
+        return CHANNEL_RC_OK;
+    }
+
+    // Tasks 8-10: dispatch to the VirtualMonitor which feeds AMediaCodec.
+    self->OnGfxSurface(cmd->surfaceId, avc->data, avc->length, /*pts=*/0);
+    return CHANNEL_RC_OK;
+}
+
 UINT RdpConnectionManager::OnGfxSurfaceCreated(RdpgfxClientContext* gfx,
                                                 const RDPGFX_CREATE_SURFACE_PDU* pdu) {
     auto* self = static_cast<RdpConnectionManager*>(gfx->custom);
-    uint32_t idx = pdu->surfaceId % kMaxMonitors;
-    self->surfaceToMonitor_[idx] = pdu->surfaceId;
-    LOGI("RDP: GFX surface created id=%u, w=%u h=%u", pdu->surfaceId, pdu->width, pdu->height);
+    uint32_t slot       = pdu->surfaceId % kMaxMonitors;
+    uint32_t monitorIdx = self->nextMonitorIdx_++;
+    self->surfaceToMonitor_[slot] = monitorIdx;
+    LOGI("RDP: GFX surface created id=%u → monitor[%u] (%ux%u)",
+         pdu->surfaceId, monitorIdx, pdu->width, pdu->height);
     return CHANNEL_RC_OK;
 }
 
@@ -194,10 +235,26 @@ UINT RdpConnectionManager::OnGfxEndFrame(RdpgfxClientContext* /*gfx*/,
     return CHANNEL_RC_OK;
 }
 
-void RdpConnectionManager::OnGfxSurface(uint32_t surfaceId, const uint8_t* /*data*/,
-                                         size_t /*size*/, int64_t /*presentationTimeUs*/) {
-    // Dispatch to the decoder for this surface.
-    // The actual decoder array is owned by main.cpp; in production, pass it in at
-    // construction time or via a callback registered by the application layer.
-    LOGD("RDP: GFX surface data for surfaceId=%u", surfaceId);
+// Tasks 8-10: look up the VirtualMonitor for this surface and feed the NAL unit.
+void RdpConnectionManager::OnGfxSurface(uint32_t surfaceId, const uint8_t* data,
+                                         size_t size, int64_t presentationTimeUs) {
+    uint32_t slot       = surfaceId % kMaxMonitors;
+    uint32_t monitorIdx = surfaceToMonitor_[slot];
+
+    if (monitorIdx == UINT32_MAX || monitorIdx >= monitorCount_) {
+        LOGW("RDP: OnGfxSurface: no monitor mapped for surfaceId=%u (slot=%u)", surfaceId, slot);
+        return;
+    }
+
+    VirtualMonitor* monitor = monitors_[monitorIdx];
+    if (!monitor) {
+        LOGW("RDP: OnGfxSurface: null monitor at index %u for surfaceId=%u", monitorIdx, surfaceId);
+        return;
+    }
+
+    // Task 8: AMediaCodec_dequeueInputBuffer is invoked inside SubmitFrame via
+    //         the async OnInputAvailable path (or directly if a buffer is pending).
+    // Task 9: memcpy of the network payload happens in VirtualMonitor::FeedToCodec.
+    // Task 10: AMediaCodec_queueInputBuffer with failure logging is in FeedToCodec.
+    monitor->SubmitFrame(data, size, presentationTimeUs);
 }

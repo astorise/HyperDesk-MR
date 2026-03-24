@@ -14,6 +14,7 @@
 
 class RdpDisplayControl;
 class RdpConnectionManager;
+class VirtualMonitor;
 
 // Extended FreeRDP client context — must begin with rdpClientContext so that
 // FreeRDP's internal code can safely cast between the two types.
@@ -34,7 +35,9 @@ public:
         std::string domain;
     };
 
-    explicit RdpConnectionManager(RdpDisplayControl& displayControl);
+    // monitors: array of kMaxMonitors VirtualMonitor* pointers (may contain nulls).
+    RdpConnectionManager(RdpDisplayControl& displayControl,
+                         VirtualMonitor* const monitors[], uint32_t monitorCount);
     ~RdpConnectionManager();
 
     bool Connect(const ConnectionParams& params);
@@ -52,7 +55,11 @@ public:
     static void OnPostDisconnect(freerdp* instance);
     static void OnChannelsConnected(void* context, const ChannelConnectedEventArgs* e);
 
-    // GFX pipeline callback — receives encoded H.264 surfaces.
+    // GFX pipeline callbacks.
+    static UINT OnGfxCapsAdvertise(RdpgfxClientContext* gfx,
+                                   const RDPGFX_CAPS_ADVERTISE_PDU* caps);
+    static UINT OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
+                                    const RDPGFX_SURFACE_COMMAND* cmd);
     static UINT OnGfxSurfaceCreated(RdpgfxClientContext* gfx,
                                     const RDPGFX_CREATE_SURFACE_PDU* pdu);
     static UINT OnGfxStartFrame(RdpgfxClientContext* gfx,
@@ -73,8 +80,14 @@ private:
     void SetupSettings(rdpSettings* settings, const ConnectionParams& params);
     void RunEventLoop();
 
-    // Maps RDP surface IDs to monitor indices (populated by OnGfxSurfaceCreated).
-    // Indexed by surfaceId % kMaxMonitors for simplicity.
     static constexpr uint32_t kMaxMonitors = 16;
+
+    // VirtualMonitor pointers passed in at construction time.
+    VirtualMonitor* monitors_[kMaxMonitors]{};
+    uint32_t        monitorCount_ = 0;
+
+    // Maps surfaceId % kMaxMonitors → monitor array index.
+    // Populated by OnGfxSurfaceCreated; UINT32_MAX means unmapped.
     uint32_t surfaceToMonitor_[kMaxMonitors]{};
+    uint32_t nextMonitorIdx_ = 0;
 };
