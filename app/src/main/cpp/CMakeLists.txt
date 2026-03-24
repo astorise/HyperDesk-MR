@@ -102,6 +102,11 @@ target_include_directories(hyperdesk_mr PRIVATE
 
 target_compile_options(hyperdesk_mr PRIVATE -fvisibility=hidden)
 
+# --gc-sections would otherwise eliminate ANativeActivity_onCreate because
+# nothing in our code calls it directly — only the Android runtime does.
+# --undefined forces the linker to pull it from native_app_glue and keep it.
+target_link_options(hyperdesk_mr PRIVATE "-Wl,--undefined=ANativeActivity_onCreate")
+
 target_compile_definitions(hyperdesk_mr PRIVATE
     XR_USE_GRAPHICS_API_VULKAN
     XR_USE_PLATFORM_ANDROID
