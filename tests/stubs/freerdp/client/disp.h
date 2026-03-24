@@ -49,7 +49,8 @@ typedef struct _DispClientContext DispClientContext;
 
 typedef UINT (*pDispClientSendMonitorLayout)(
     DispClientContext* context,
-    DISPLAY_CONTROL_MONITOR_LAYOUT_PDU* pMonitorLayoutPdu);
+    UINT32             numMonitors,
+    DISPLAY_CONTROL_MONITOR_LAYOUT* monitors);
 
 typedef UINT (*pDispClientDisplayControlCaps)(
     DispClientContext* context,

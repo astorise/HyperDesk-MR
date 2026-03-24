@@ -19,13 +19,12 @@ struct MockDispCtx {
     }
 
     static UINT MockSendMonitorLayout(DispClientContext* ctx,
-                                      DISPLAY_CONTROL_MONITOR_LAYOUT_PDU* pdu) {
+                                      UINT32 numMonitors,
+                                      DISPLAY_CONTROL_MONITOR_LAYOUT* monitors) {
         auto* self = static_cast<MockDispCtx*>(ctx->custom);
         self->sendCallCount++;
-        if (pdu && pdu->Monitors) {
-            self->capturedMonitors.assign(
-                pdu->Monitors,
-                pdu->Monitors + pdu->NumMonitors);
+        if (monitors) {
+            self->capturedMonitors.assign(monitors, monitors + numMonitors);
         }
         return self->sendReturnValue;
     }

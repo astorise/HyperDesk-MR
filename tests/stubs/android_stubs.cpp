@@ -6,6 +6,11 @@
 
 #include <cstdlib>
 
+// Define struct bodies here so we can create sentinel instances.
+// The headers forward-declare these as opaque types; the stubs need concrete bodies.
+struct AMediaFormat {};
+struct AMediaCodec  {};
+
 // ── AMediaFormat ──────────────────────────────────────────────────────────────
 
 // Use a sentinel value rather than a heap allocation — the stubs ignore the pointer.

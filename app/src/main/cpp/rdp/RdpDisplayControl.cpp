@@ -50,11 +50,9 @@ UINT RdpDisplayControl::SendMonitorLayout() {
 
     auto entries = BuildLayoutPDU();
 
-    DISPLAY_CONTROL_MONITOR_LAYOUT_PDU pdu{};
-    pdu.NumMonitors = static_cast<UINT32>(entries.size());
-    pdu.Monitors    = entries.data();
-
-    UINT result = ctx_->SendMonitorLayout(ctx_, &pdu);
+    UINT result = ctx_->SendMonitorLayout(ctx_,
+                                          static_cast<UINT32>(entries.size()),
+                                          entries.data());
     if (result == CHANNEL_RC_OK) {
         LOGI("DisplayControl: LAYOUT PDU sent (%u monitors)", pdu.NumMonitors);
         layout_->SetAllActive();
