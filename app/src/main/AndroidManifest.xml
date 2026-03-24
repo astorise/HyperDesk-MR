@@ -4,11 +4,15 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="com.oculus.permission.HAND_TRACKING" />
+    <uses-permission android:name="horizonos.permission.HAND_TRACKING" />
 
     <uses-feature
         android:name="android.hardware.vr.headtracking"
         android:required="true"
         android:version="1" />
+
+    <!-- Controllers are optional: suppresses the "controller required" launch dialog -->
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
     <application
         android:label="HyperDesk MR"
