@@ -9,7 +9,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(
     -Wall -Wextra -Werror
     -Wno-missing-field-initializers
-    -fvisibility=hidden
     -ffunction-sections
     -fdata-sections
     -O2
@@ -40,8 +39,9 @@ endif()
 
 add_library(native_app_glue STATIC ${GLUE_SRC})
 target_include_directories(native_app_glue PUBLIC ${GLUE_INC})
-# NDK glue source has unused-parameter warnings; don't apply our strict flags
-set_target_properties(native_app_glue PROPERTIES COMPILE_OPTIONS "")
+# NDK glue must not use -fvisibility=hidden: ANativeActivity_onCreate must be
+# exported from the final .so so the Android runtime can find it.
+target_compile_options(native_app_glue PRIVATE -Wno-unused-parameter)
 
 # ── Android NDK built-in libraries ────────────────────────────────────────────
 find_library(log-lib     log)
@@ -99,6 +99,8 @@ target_include_directories(hyperdesk_mr PRIVATE
     "${OPENXR_SDK_ROOT}/include/openxr"
     "${FREERDP_ROOT}/include"
 )
+
+target_compile_options(hyperdesk_mr PRIVATE -fvisibility=hidden)
 
 target_compile_definitions(hyperdesk_mr PRIVATE
     XR_USE_GRAPHICS_API_VULKAN
