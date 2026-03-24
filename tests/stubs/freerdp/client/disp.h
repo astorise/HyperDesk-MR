@@ -43,13 +43,8 @@ typedef struct {
     DISPLAY_CONTROL_MONITOR_LAYOUT* Monitors;
 } DISPLAY_CONTROL_MONITOR_LAYOUT_PDU;
 
-typedef struct {
-    UINT32 MaxNumMonitors;
-    UINT32 MaxMonitorAreaFactorA;
-    UINT32 MaxMonitorAreaFactorB;
-} DISPLAY_CONTROL_CAPS_PDU;
-
 // ── DispClientContext ─────────────────────────────────────────────────────────
+// Matches FreeRDP 3.x API: caps are passed as individual UINT parameters.
 typedef struct _DispClientContext DispClientContext;
 
 typedef UINT (*pDispClientSendMonitorLayout)(
@@ -58,10 +53,12 @@ typedef UINT (*pDispClientSendMonitorLayout)(
 
 typedef UINT (*pDispClientDisplayControlCaps)(
     DispClientContext* context,
-    DISPLAY_CONTROL_CAPS_PDU* caps);
+    UINT maxNumMonitors,
+    UINT maxMonitorAreaFactorA,
+    UINT maxMonitorAreaFactorB);
 
 struct _DispClientContext {
-    void*                        custom;
-    pDispClientSendMonitorLayout SendMonitorLayout;
+    void*                         custom;
+    pDispClientSendMonitorLayout  SendMonitorLayout;
     pDispClientDisplayControlCaps DisplayControlCaps;
 };

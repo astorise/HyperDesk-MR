@@ -124,11 +124,7 @@ TEST_F(RdpDisplayControlTest, SendMonitorLayout_CallCount_One) {
 // ── OnDisplayControlCaps callback ────────────────────────────────────────────
 
 TEST_F(RdpDisplayControlTest, OnCaps_16Monitors_TriggersLayoutSend) {
-    DISPLAY_CONTROL_CAPS_PDU caps{};
-    caps.MaxNumMonitors       = 16;
-    caps.MaxMonitorAreaFactorA = 8192;
-
-    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, &caps);
+    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 16, 8192, 0);
 
     EXPECT_EQ(result, CHANNEL_RC_OK);
     EXPECT_EQ(mock.sendCallCount, 1);
@@ -136,28 +132,19 @@ TEST_F(RdpDisplayControlTest, OnCaps_16Monitors_TriggersLayoutSend) {
 }
 
 TEST_F(RdpDisplayControlTest, OnCaps_32Monitors_TriggersLayoutSend) {
-    DISPLAY_CONTROL_CAPS_PDU caps{};
-    caps.MaxNumMonitors = 32;
-
-    RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, &caps);
+    RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 32, 0, 0);
     EXPECT_EQ(mock.sendCallCount, 1);
 }
 
 TEST_F(RdpDisplayControlTest, OnCaps_TooFewMonitors_NoLayoutSent) {
-    DISPLAY_CONTROL_CAPS_PDU caps{};
-    caps.MaxNumMonitors = 8;
-
-    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, &caps);
+    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 8, 0, 0);
 
     EXPECT_EQ(result, CHANNEL_RC_OK);
     EXPECT_EQ(mock.sendCallCount, 0);
 }
 
 TEST_F(RdpDisplayControlTest, OnCaps_Exactly15Monitors_NoLayoutSent) {
-    DISPLAY_CONTROL_CAPS_PDU caps{};
-    caps.MaxNumMonitors = 15;
-
-    RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, &caps);
+    RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 15, 0, 0);
     EXPECT_EQ(mock.sendCallCount, 0);
 }
 

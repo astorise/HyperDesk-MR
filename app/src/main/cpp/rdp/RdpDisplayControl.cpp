@@ -23,15 +23,17 @@ void RdpDisplayControl::Attach(DispClientContext* ctx) {
 // ── CAPS PDU callback (Task 4) ────────────────────────────────────────────────
 
 UINT RdpDisplayControl::OnDisplayControlCaps(DispClientContext* ctx,
-                                              DISPLAY_CONTROL_CAPS_PDU* caps) {
+                                              UINT maxNumMonitors,
+                                              UINT maxMonitorAreaFactorA,
+                                              UINT /*maxMonitorAreaFactorB*/) {
     auto* self = static_cast<RdpDisplayControl*>(ctx->custom);
-    self->maxMonitors_ = caps->MaxNumMonitors;
+    self->maxMonitors_ = maxNumMonitors;
 
     LOGI("DisplayControl: CAPS received — MaxNumMonitors=%u MaxMonitorArea=%u",
-         caps->MaxNumMonitors, caps->MaxMonitorAreaFactorA);
+         maxNumMonitors, maxMonitorAreaFactorA);
 
-    if (caps->MaxNumMonitors < 16) {
-        LOGE("DisplayControl: server supports only %u monitors, need 16", caps->MaxNumMonitors);
+    if (maxNumMonitors < 16) {
+        LOGE("DisplayControl: server supports only %u monitors, need 16", maxNumMonitors);
         return CHANNEL_RC_OK;
     }
 

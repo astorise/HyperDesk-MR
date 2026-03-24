@@ -53,14 +53,12 @@ target_include_directories(hyperdesk_tests PRIVATE
     "${APP_CPP_DIR}"
     # Stub headers shadow Android/FreeRDP system headers
     "${STUBS_DIR}"
-    # OpenXR headers (from libopenxr-dev)
-    OpenXR::Headers
 )
 
 target_link_libraries(hyperdesk_tests
     PRIVATE
         GTest::gtest_main
-        OpenXR::Headers
+        OpenXR::openxr_loader
 )
 
 # Suppress warnings that trip on the stubs or production code built on Linux.
