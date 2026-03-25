@@ -2,12 +2,6 @@
 
 #include "util/Logger.h"
 #include "xr/XrContext.h"
-#ifdef __ANDROID__
-#include <jni.h>
-// winpr_InitializeJvm is not in a public header but is exported from libwinpr3.
-// Forward-declare so we can register the JavaVM before any FreeRDP context is created.
-extern "C" int winpr_InitializeJvm(JavaVM* jvm);
-#endif
 #include "xr/XrPassthrough.h"
 #include "xr/XrCompositor.h"
 #include "rdp/RdpConnectionManager.h"
@@ -64,11 +58,9 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
 void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
 
-    // Register the JavaVM with WinPR so its JNI-dependent subsystems
-    // (timezone, locale, etc.) can attach to the JVM before FreeRDP initialises.
-#ifdef __ANDROID__
-    winpr_InitializeJvm(app->activity->vm);
-#endif
+    // WinPR's JNI_OnLoad (from android.c in libwinpr3.a) registers the JavaVM
+    // pointer.  The Android runtime calls it automatically when loading the .so,
+    // before android_main runs — no explicit call needed here.
 
     AppState state;
     app->userData  = &state;

@@ -102,10 +102,14 @@ target_include_directories(hyperdesk_mr PRIVATE
 
 target_compile_options(hyperdesk_mr PRIVATE -fvisibility=hidden)
 
-# --gc-sections would otherwise eliminate ANativeActivity_onCreate because
-# nothing in our code calls it directly — only the Android runtime does.
-# --undefined forces the linker to pull it from native_app_glue and keep it.
-target_link_options(hyperdesk_mr PRIVATE "-Wl,--undefined=ANativeActivity_onCreate")
+# --gc-sections would otherwise eliminate ANativeActivity_onCreate and
+# JNI_OnLoad because nothing in our code calls them directly — only the
+# Android runtime does.  JNI_OnLoad comes from WinPR's android.c in
+# libwinpr3.a and registers the JavaVM before android_main runs.
+target_link_options(hyperdesk_mr PRIVATE
+    "-Wl,--undefined=ANativeActivity_onCreate"
+    "-Wl,--undefined=JNI_OnLoad"
+)
 
 target_compile_definitions(hyperdesk_mr PRIVATE
     XR_USE_GRAPHICS_API_VULKAN
