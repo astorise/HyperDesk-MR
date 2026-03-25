@@ -48,6 +48,7 @@ public:
 
     XrPassthroughFB      GetPassthroughFB()      const { return passthrough_; }
     XrPassthroughLayerFB GetPassthroughLayerFB() const { return passthroughLayer_; }
+    bool                 IsPassthroughAvailable() const { return passthroughAvailable_; }
 
 private:
     android_app*         app_              = nullptr;
@@ -56,8 +57,9 @@ private:
     XrSystemId           systemId_         = XR_NULL_SYSTEM_ID;
     XrSpace              worldSpace_       = XR_NULL_HANDLE;
     XrSessionState       sessionState_     = XR_SESSION_STATE_UNKNOWN;
-    XrPassthroughFB      passthrough_      = XR_NULL_HANDLE;
-    XrPassthroughLayerFB passthroughLayer_ = XR_NULL_HANDLE;
+    bool                 passthroughAvailable_ = false;
+    XrPassthroughFB      passthrough_          = XR_NULL_HANDLE;
+    XrPassthroughLayerFB passthroughLayer_     = XR_NULL_HANDLE;
 
     // Minimal Vulkan objects — only what XrGraphicsBindingVulkanKHR requires.
     VkInstance       vkInstance_   = VK_NULL_HANDLE;

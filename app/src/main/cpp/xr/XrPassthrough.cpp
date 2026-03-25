@@ -4,6 +4,8 @@
 #include "../util/Check.h"
 
 XrPassthrough::XrPassthrough(XrContext& ctx) : ctx_(ctx) {
+    if (!ctx_.IsPassthroughAvailable()) return;
+
     passthrough_      = ctx_.GetPassthroughFB();
     passthroughLayer_ = ctx_.GetPassthroughLayerFB();
 
@@ -24,16 +26,19 @@ XrPassthrough::XrPassthrough(XrContext& ctx) : ctx_(ctx) {
 XrPassthrough::~XrPassthrough() = default;  // handles are owned by XrContext
 
 void XrPassthrough::Start() {
+    if (!pfnStart_) return;
     XR_CHECK(pfnStart_(passthrough_));
     XR_CHECK(pfnLayerResume_(passthroughLayer_));
     LOGI("Passthrough started");
 }
 
 void XrPassthrough::Pause() {
+    if (!pfnPause_) return;
     XR_CHECK(pfnPause_(passthrough_));
     LOGI("Passthrough paused");
 }
 
 XrCompositionLayerBaseHeader* XrPassthrough::GetLayer() {
+    if (passthroughLayer_ == XR_NULL_HANDLE) return nullptr;
     return reinterpret_cast<XrCompositionLayerBaseHeader*>(&layerDesc_);
 }

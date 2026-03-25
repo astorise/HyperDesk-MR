@@ -40,23 +40,28 @@ void XrContext::CreateInstance() {
     loaderInfo.applicationContext  = app_->activity->clazz;
     XR_CHECK(initLoader(reinterpret_cast<const XrLoaderInitInfoBaseHeaderKHR*>(&loaderInfo)));
 
-    // Enumerate available extensions for diagnostic logging.
+    // Check which optional extensions are available.
     uint32_t extCount = 0;
     xrEnumerateInstanceExtensionProperties(nullptr, 0, &extCount, nullptr);
     std::vector<XrExtensionProperties> availableExts(extCount,
         {XR_TYPE_EXTENSION_PROPERTIES});
     xrEnumerateInstanceExtensionProperties(nullptr, extCount, &extCount,
         availableExts.data());
-    LOGI("Available OpenXR extensions (%u):", extCount);
     for (const auto& ext : availableExts) {
-        LOGI("  %s (v%u)", ext.extensionName, ext.extensionVersion);
+        if (std::strcmp(ext.extensionName, XR_FB_PASSTHROUGH_EXTENSION_NAME) == 0) {
+            passthroughAvailable_ = true;
+            break;
+        }
     }
+    LOGI("XR_FB_passthrough: %s", passthroughAvailable_ ? "available" : "not available");
 
-    const char* enabledExtensions[] = {
+    std::vector<const char*> enabledExtensions = {
         XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
         XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME,
-        XR_FB_PASSTHROUGH_EXTENSION_NAME,
     };
+    if (passthroughAvailable_) {
+        enabledExtensions.push_back(XR_FB_PASSTHROUGH_EXTENSION_NAME);
+    }
 
     XrInstanceCreateInfoAndroidKHR androidInfo{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
     androidInfo.applicationVM       = app_->activity->vm;
@@ -72,8 +77,8 @@ void XrContext::CreateInstance() {
     XrInstanceCreateInfo createInfo{XR_TYPE_INSTANCE_CREATE_INFO};
     createInfo.next                    = &androidInfo;
     createInfo.applicationInfo         = appInfo;
-    createInfo.enabledExtensionCount   = static_cast<uint32_t>(std::size(enabledExtensions));
-    createInfo.enabledExtensionNames   = enabledExtensions;
+    createInfo.enabledExtensionCount   = static_cast<uint32_t>(enabledExtensions.size());
+    createInfo.enabledExtensionNames   = enabledExtensions.data();
 
     XR_CHECK(xrCreateInstance(&createInfo, &instance_));
     LOGI("XrInstance created");
@@ -93,14 +98,16 @@ void XrContext::LoadExtensionFunctions() {
     XR_LOAD_FN(instance_, xrCreateVulkanInstanceKHR,           pfnCreateVulkanInstanceKHR_);
     XR_LOAD_FN(instance_, xrGetVulkanGraphicsDevice2KHR,       pfnGetVulkanGraphicsDevice2KHR_);
     XR_LOAD_FN(instance_, xrCreateVulkanDeviceKHR,             pfnCreateVulkanDeviceKHR_);
-    XR_LOAD_FN(instance_, xrCreatePassthroughFB,               pfnCreatePassthroughFB_);
-    XR_LOAD_FN(instance_, xrDestroyPassthroughFB,              pfnDestroyPassthroughFB_);
-    XR_LOAD_FN(instance_, xrPassthroughStartFB,                pfnPassthroughStartFB_);
-    XR_LOAD_FN(instance_, xrPassthroughPauseFB,                pfnPassthroughPauseFB_);
-    XR_LOAD_FN(instance_, xrCreatePassthroughLayerFB,          pfnCreatePassthroughLayerFB_);
-    XR_LOAD_FN(instance_, xrDestroyPassthroughLayerFB,         pfnDestroyPassthroughLayerFB_);
-    XR_LOAD_FN(instance_, xrPassthroughLayerResumeFB,          pfnPassthroughLayerResumeFB_);
-    XR_LOAD_FN(instance_, xrPassthroughLayerPauseFB,           pfnPassthroughLayerPauseFB_);
+    if (passthroughAvailable_) {
+        XR_LOAD_FN(instance_, xrCreatePassthroughFB,               pfnCreatePassthroughFB_);
+        XR_LOAD_FN(instance_, xrDestroyPassthroughFB,              pfnDestroyPassthroughFB_);
+        XR_LOAD_FN(instance_, xrPassthroughStartFB,                pfnPassthroughStartFB_);
+        XR_LOAD_FN(instance_, xrPassthroughPauseFB,                pfnPassthroughPauseFB_);
+        XR_LOAD_FN(instance_, xrCreatePassthroughLayerFB,          pfnCreatePassthroughLayerFB_);
+        XR_LOAD_FN(instance_, xrDestroyPassthroughLayerFB,         pfnDestroyPassthroughLayerFB_);
+        XR_LOAD_FN(instance_, xrPassthroughLayerResumeFB,          pfnPassthroughLayerResumeFB_);
+        XR_LOAD_FN(instance_, xrPassthroughLayerPauseFB,           pfnPassthroughLayerPauseFB_);
+    }
 }
 
 // ── CreateVulkanObjects ───────────────────────────────────────────────────────
@@ -225,6 +232,10 @@ void XrContext::CreateSession() {
 // ── InitializePassthrough ─────────────────────────────────────────────────────
 
 void XrContext::InitializePassthrough() {
+    if (!passthroughAvailable_) {
+        LOGI("Passthrough not available — skipped");
+        return;
+    }
     XrPassthroughCreateInfoFB ptInfo{XR_TYPE_PASSTHROUGH_CREATE_INFO_FB};
     ptInfo.flags = XR_PASSTHROUGH_IS_RUNNING_AT_CREATION_BIT_FB;
     XR_CHECK(pfnCreatePassthroughFB_(session_, &ptInfo, &passthrough_));

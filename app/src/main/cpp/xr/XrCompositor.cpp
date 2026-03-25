@@ -41,9 +41,10 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
     // Step 2: Build composition layers.
     uint32_t layerCount = 0;
 
-    // Passthrough layer is always first.
-    layerPtrs_[layerCount++] =
-        reinterpret_cast<const XrCompositionLayerBaseHeader*>(passthrough_.GetLayer());
+    // Passthrough layer is first when available.
+    if (auto* pt = passthrough_.GetLayer()) {
+        layerPtrs_[layerCount++] = pt;
+    }
 
     // Add a quad layer for each active, visible monitor.
     for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
