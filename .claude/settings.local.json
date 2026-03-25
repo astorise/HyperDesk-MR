@@ -1,11 +1,37 @@
 {
   "permissions": {
     "allow": [
+      "Bash(*)",
+      "Read(*)",
+      "Write(*)",
       "Bash(find openspec:*)",
       "Read(//c/Users/astor/AppData/Roaming/npm/**)",
       "Read(//c/Users/astor/AppData/Roaming/npm//**)",
       "Bash(ls -la /c/Users/astor/Git/HyperDesk-MR/.agent/skills/openspec*)",
-      "Bash(find /c/Users/astor/AppData/Roaming/npm/node_modules/@fission-ai/openspec -type f -name *.js -o -name *.json -o -name *.md)"
+      "Bash(find /c/Users/astor/AppData/Roaming/npm/node_modules/@fission-ai/openspec -type f -name *.js -o -name *.json -o -name *.md)",
+      "Bash(adb version:*)",
+      "Bash(adb devices:*)",
+      "Bash(winget search:*)",
+      "Bash(powershell.exe -Command \"winget search ''android platform tools'' 2>&1 | Select-Object -First 10\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem ''C:\\\\Users\\\\astor\\\\AppData\\\\Local\\\\Android'' -ErrorAction SilentlyContinue | Select-Object Name\")",
+      "Bash(powershell.exe -Command @':*)",
+      "Bash(Write-Host \"Downloading to $dest ...\")",
+      "Bash(Invoke-WebRequest -Uri $url -OutFile $dest -UseBasicParsing)",
+      "Bash(Write-Host \"Extracting to $extract ...\")",
+      "Bash(Expand-Archive -Path $dest -DestinationPath $extract -Force)",
+      "Read(//tmp/**)",
+      "Bash(powershell.exe -File:*)",
+      "Bash(cp /c/Users/astor/Downloads/hyperdesk-mr-debug-v2.apk .)",
+      "Bash(unzip -p hyperdesk-mr-debug-v2.apk lib/arm64-v8a/libhyperdesk_mr.so)",
+      "Bash(nm -D libhyperdesk_mr.so)",
+      "Bash(nm /tmp/libhyperdesk_mr.so)",
+      "Bash(readelf -s /tmp/libhyperdesk_mr.so)",
+      "Bash(readelf -Ws /tmp/libhyperdesk_mr_v3.so)",
+      "WebSearch",
+      "WebFetch(domain:raw.githubusercontent.com)"
+    ],
+    "additionalDirectories": [
+      "\\tmp\\apk-download"
     ]
   }
 }
