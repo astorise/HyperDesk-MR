@@ -13,6 +13,13 @@
 #include <array>
 #include <memory>
 
+#ifdef __ANDROID__
+#include <jni.h>
+// jniVm is the global JavaVM pointer in winpr/libwinpr/utils/android.c.
+// winpr_jni_attach_thread asserts it is non-null before any JNI call.
+extern "C" JavaVM* jniVm;
+#endif
+
 // ── Application state ─────────────────────────────────────────────────────────
 
 struct AppState {
@@ -58,9 +65,11 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
 void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
 
-    // WinPR's JNI_OnLoad (from android.c in libwinpr3.a) registers the JavaVM
-    // pointer.  The Android runtime calls it automatically when loading the .so,
-    // before android_main runs — no explicit call needed here.
+    // Register the JavaVM with WinPR so winpr_jni_attach_thread (used by
+    // Unicode conversion, timezone, etc.) can attach to the JVM.
+#ifdef __ANDROID__
+    jniVm = app->activity->vm;
+#endif
 
     AppState state;
     app->userData  = &state;
