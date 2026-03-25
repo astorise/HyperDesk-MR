@@ -40,6 +40,18 @@ void XrContext::CreateInstance() {
     loaderInfo.applicationContext  = app_->activity->clazz;
     XR_CHECK(initLoader(reinterpret_cast<const XrLoaderInitInfoBaseHeaderKHR*>(&loaderInfo)));
 
+    // Enumerate available extensions for diagnostic logging.
+    uint32_t extCount = 0;
+    xrEnumerateInstanceExtensionProperties(nullptr, 0, &extCount, nullptr);
+    std::vector<XrExtensionProperties> availableExts(extCount,
+        {XR_TYPE_EXTENSION_PROPERTIES});
+    xrEnumerateInstanceExtensionProperties(nullptr, extCount, &extCount,
+        availableExts.data());
+    LOGI("Available OpenXR extensions (%u):", extCount);
+    for (const auto& ext : availableExts) {
+        LOGI("  %s (v%u)", ext.extensionName, ext.extensionVersion);
+    }
+
     const char* enabledExtensions[] = {
         XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
         XR_KHR_VULKAN_ENABLE2_EXTENSION_NAME,
