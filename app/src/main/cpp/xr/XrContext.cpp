@@ -216,17 +216,8 @@ void XrContext::CreateSession() {
     sessionInfo.systemId = systemId_;
     XR_CHECK(xrCreateSession(instance_, &sessionInfo, &session_));
     LOGI("XrSession created");
-
-    // Create a STAGE reference space (world-locked at floor level).
-    XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
-    spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
-    spaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
-    XR_CHECK(xrCreateReferenceSpace(session_, &spaceInfo, &worldSpace_));
-
-    XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
-    beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
-    XR_CHECK(xrBeginSession(session_, &beginInfo));
-    LOGI("XrSession begun");
+    // xrBeginSession and xrCreateReferenceSpace are deferred to
+    // HandleSessionStateChange(XR_SESSION_STATE_READY) as required by the spec.
 }
 
 // ── InitializePassthrough ─────────────────────────────────────────────────────
@@ -277,6 +268,17 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
     sessionState_ = event.state;
     LOGI("Session state → %d", static_cast<int>(sessionState_));
     switch (sessionState_) {
+        case XR_SESSION_STATE_READY: {
+            XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
+            beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
+            XR_CHECK(xrBeginSession(session_, &beginInfo));
+            LOGI("XrSession begun");
+            XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+            spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
+            spaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
+            XR_CHECK(xrCreateReferenceSpace(session_, &spaceInfo, &worldSpace_));
+            break;
+        }
         case XR_SESSION_STATE_FOCUSED:
             sessionActive = true;
             break;
