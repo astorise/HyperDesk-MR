@@ -2,6 +2,9 @@
 
 #include "util/Logger.h"
 #include "xr/XrContext.h"
+#ifdef __ANDROID__
+#include <winpr/android.h>
+#endif
 #include "xr/XrPassthrough.h"
 #include "xr/XrCompositor.h"
 #include "rdp/RdpConnectionManager.h"
@@ -57,6 +60,12 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
 
 void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
+
+    // Register the JavaVM with WinPR so its JNI-dependent subsystems
+    // (timezone, locale, etc.) can attach to the JVM before FreeRDP initialises.
+#ifdef __ANDROID__
+    winpr_InitializeJvm(app->activity->vm);
+#endif
 
     AppState state;
     app->userData  = &state;
