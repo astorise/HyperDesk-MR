@@ -11,6 +11,7 @@
 #include "scene/VirtualMonitor.h"
 
 #include <array>
+#include <cstdlib>
 #include <memory>
 
 #ifdef __ANDROID__
@@ -67,8 +68,11 @@ void android_main(android_app* app) {
 
     // Register the JavaVM with WinPR so winpr_jni_attach_thread (used by
     // Unicode conversion, timezone, etc.) can attach to the JVM.
+    // Also set HOME so WinPR's GetKnownPath can resolve config paths.
 #ifdef __ANDROID__
     jniVm = app->activity->vm;
+    if (app->activity->internalDataPath)
+        setenv("HOME", app->activity->internalDataPath, 0);
 #endif
 
     AppState state;
