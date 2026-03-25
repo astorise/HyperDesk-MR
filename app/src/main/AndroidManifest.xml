@@ -14,6 +14,10 @@
     <!-- Controllers are optional: suppresses the "controller required" launch dialog -->
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
+    <!-- Declare hand-tracking support so RequiresControllersLaunchInterceptor
+         (appSupportsHandTracking) skips the controller-required dialog. -->
+    <uses-feature android:name="oculus.software.handtracking" android:required="false" />
+
     <application
         android:label="HyperDesk MR"
         android:hasCode="false">
