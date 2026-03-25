@@ -3,7 +3,10 @@
 #include "util/Logger.h"
 #include "xr/XrContext.h"
 #ifdef __ANDROID__
-#include <winpr/android.h>
+#include <jni.h>
+// winpr_InitializeJvm is not in a public header but is exported from libwinpr3.
+// Forward-declare so we can register the JavaVM before any FreeRDP context is created.
+extern "C" int winpr_InitializeJvm(JavaVM* jvm);
 #endif
 #include "xr/XrPassthrough.h"
 #include "xr/XrCompositor.h"
