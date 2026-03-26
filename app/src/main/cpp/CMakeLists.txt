@@ -5,10 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# ── Compiler flags ─────────────────────────────────────────────────────────────
+# ── Compiler flags (non-Werror, safe for third-party code) ────────────────────
 add_compile_options(
-    -Wall -Wextra -Werror
-    -Wno-missing-field-initializers
     -ffunction-sections
     -fdata-sections
     -O2
@@ -120,7 +118,12 @@ target_include_directories(hyperdesk_mr PRIVATE
     "${FREERDP_ROOT}/include"
 )
 
-target_compile_options(hyperdesk_mr PRIVATE -fvisibility=hidden)
+# Strict warnings only for our own code (not third-party FetchContent deps).
+target_compile_options(hyperdesk_mr PRIVATE
+    -Wall -Wextra -Werror
+    -Wno-missing-field-initializers
+    -fvisibility=hidden
+)
 
 # --gc-sections would otherwise eliminate ANativeActivity_onCreate because
 # nothing in our code calls it directly — only the Android runtime does.
