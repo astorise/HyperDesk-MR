@@ -28,7 +28,8 @@
       "Bash(readelf -s /tmp/libhyperdesk_mr.so)",
       "Bash(readelf -Ws /tmp/libhyperdesk_mr_v3.so)",
       "WebSearch",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:api.github.com)"
     ],
     "additionalDirectories": [
       "\\tmp\\apk-download"

@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HyperDesk MR - Générateur de Connexion</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
+
+    <div class="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl">
+        
+        <div>
+            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent mb-2">
+                HyperDesk MR
+            </h1>
+            <p class="text-slate-400 mb-8">Configurez votre session RDP multi-écrans pour Quest 3.</p>
+
+            <form id="rdp-form" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Hôte (IP ou Nom)</label>
+                    <input type="text" name="h" placeholder="192.168.1.100" required
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Utilisateur</label>
+                        <input type="text" name="u" placeholder="Admin" required
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-slate-300 mb-1">Port</label>
+                        <input type="number" name="port" value="3389"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Mot de passe</label>
+                    <input type="password" name="p" placeholder="••••••••" required
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Domaine (Optionnel)</label>
+                    <input type="text" name="d" placeholder="WORKGROUP"
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+
+                <button type="submit" 
+                    class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition-colors shadow-lg shadow-blue-900/20">
+                    Générer le QR Code
+                </button>
+            </form>
+        </div>
+
+        <div class="flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-slate-800 pt-8 md:pt-0 md:pl-8">
+            <div id="qrcode-container" class="bg-white p-4 rounded-xl shadow-inner mb-6 transition-transform hover:scale-105">
+                </div>
+            
+            <div class="text-center">
+                <h2 class="text-lg font-semibold mb-2">Comment scanner ?</h2>
+                <ol class="text-sm text-slate-400 space-y-2 text-left list-decimal list-inside">
+                    <li>Mettez votre casque Quest 3</li>
+                    <li>Lancez l'application HyperDesk MR</li>
+                    <li>Visez ce code avec les caméras</li>
+                    <li>La connexion démarrera automatiquement</li>
+                </ol>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('rdp-form');
+        const qrContainer = document.getElementById('qrcode-container');
+        let qrcode = null;
+
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const data = {
+                h: formData.get('h'),
+                u: formData.get('u'),
+                p: formData.get('p'),
+                port: parseInt(formData.get('port')) || 3389
+            };
+
+            if (formData.get('d')) data.d = formData.get('d');
+
+            // Conversion en JSON compact pour minimiser la taille du QR
+            const jsonString = JSON.stringify(data);
+
+            // Nettoyage et génération
+            qrContainer.innerHTML = "";
+            qrcode = new QRCode(qrContainer, {
+                text: jsonString,
+                width: 256,
+                height: 256,
+                colorDark : "#0f172a",
+                colorLight : "#ffffff",
+                correctLevel : QRCode.CorrectLevel.H
+            });
+        });
+
+        // Génération initiale par défaut
+        window.onload = () => {
+            const initialData = '{"h":"192.168.1.100","u":"user","p":"password","port":3389}';
+            new QRCode(qrContainer, {
+                text: initialData,
+                width: 256,
+                height: 256,
+                colorDark : "#0f172a",
+                colorLight : "#ffffff"
+            });
+        };
+    </script>
+</body>
+</html>
