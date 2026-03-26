@@ -368,6 +368,7 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
             XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
             beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
             XR_CHECK(xrBeginSession(session_, &beginInfo));
+            sessionRunning_ = true;
             LOGI("XrSession begun");
             XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
             spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
@@ -379,6 +380,7 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
             sessionActive = true;
             break;
         case XR_SESSION_STATE_STOPPING:
+            sessionRunning_ = false;
             sessionActive = false;
             xrEndSession(session_);
             break;

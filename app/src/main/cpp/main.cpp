@@ -174,16 +174,23 @@ void android_main(android_app* app) {
         state.xrContext->PollEvents(exitRequested, state.sessionActive);
         if (exitRequested) break;
 
-        if (!state.sessionActive) continue;
-
-        state.xrContext->SyncActions();
+        // Must submit frames after xrBeginSession for the runtime to
+        // transition through SYNCHRONIZED → VISIBLE → FOCUSED.
+        if (!state.xrContext->IsSessionRunning()) continue;
 
         XrFrameState frameState{XR_TYPE_FRAME_STATE};
-        if (!state.xrContext->BeginFrame(frameState)) continue;
-        state.compositor->RenderFrame(frameState);
+        bool shouldRender = state.xrContext->BeginFrame(frameState);
 
-        // Periodic scanner status indicator (~every 5s at 60fps).
-        if (++frameCount % 300 == 0) {
+        if (shouldRender && state.sessionActive) {
+            state.xrContext->SyncActions();
+            state.compositor->RenderFrame(frameState);
+        } else {
+            // Submit empty frame — required by spec after xrBeginFrame.
+            state.xrContext->EndFrame(frameState, 0, nullptr);
+        }
+
+        // Periodic scanner status indicator (~every 5s at 72fps).
+        if (++frameCount % 360 == 0) {
             if (state.qrScanner && state.qrScanner->IsRunning()) {
                 LOGI("QR scanner scanning...");
             }
