@@ -316,13 +316,13 @@ void XrContext::InitializePassthrough() {
         return;
     }
     XrPassthroughCreateInfoFB ptInfo{XR_TYPE_PASSTHROUGH_CREATE_INFO_FB};
-    ptInfo.flags = XR_PASSTHROUGH_IS_RUNNING_AT_CREATION_BIT_FB;
+    ptInfo.flags = 0;
     XR_CHECK(pfnCreatePassthroughFB_(session_, &ptInfo, &passthrough_));
 
     XrPassthroughLayerCreateInfoFB layerInfo{XR_TYPE_PASSTHROUGH_LAYER_CREATE_INFO_FB};
     layerInfo.passthrough = passthrough_;
     layerInfo.purpose     = XR_PASSTHROUGH_LAYER_PURPOSE_RECONSTRUCTION_FB;
-    layerInfo.flags       = XR_PASSTHROUGH_IS_RUNNING_AT_CREATION_BIT_FB;
+    layerInfo.flags       = 0;
     XR_CHECK(pfnCreatePassthroughLayerFB_(session_, &layerInfo, &passthroughLayer_));
     LOGI("Passthrough initialised");
 }
