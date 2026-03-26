@@ -8,7 +8,9 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 
@@ -40,9 +42,17 @@ public:
                          VirtualMonitor* const monitors[], uint32_t monitorCount);
     ~RdpConnectionManager();
 
+    // Callback invoked on the RDP thread when connection fails or disconnects.
+    // Argument is the FreeRDP error code from freerdp_get_last_error().
+    using ErrorCallback = std::function<void(uint32_t errorCode)>;
+    void SetErrorCallback(ErrorCallback cb);
+
     bool Connect(const ConnectionParams& params);
     void Disconnect();
     bool IsConnected() const { return connected_.load(); }
+
+    // Last FreeRDP error code captured on connection failure (0 = no error).
+    uint32_t GetLastError() const { return lastError_.load(); }
 
     // Called from the FreeRDP GFX callback to push a compressed NAL unit to
     // the decoder for the given RDP surface ID.
@@ -76,6 +86,9 @@ private:
     std::thread          rdpThread_;
     std::atomic<bool>    connected_{false};
     std::atomic<bool>    stopFlag_{false};
+    std::atomic<uint32_t> lastError_{0};
+    ErrorCallback        errorCallback_;
+    std::mutex           errorCbMutex_;
 
     void SetupSettings(rdpSettings* settings, const ConnectionParams& params);
     void RunEventLoop();

@@ -18,6 +18,8 @@
 XrContext::XrContext(android_app* app) : app_(app) {}
 
 XrContext::~XrContext() {
+    if (hapticAction_     != XR_NULL_HANDLE) xrDestroyAction(hapticAction_);
+    if (actionSet_        != XR_NULL_HANDLE) xrDestroyActionSet(actionSet_);
     if (worldSpace_       != XR_NULL_HANDLE) xrDestroySpace(worldSpace_);
     if (passthroughLayer_ != XR_NULL_HANDLE) pfnDestroyPassthroughLayerFB_(passthroughLayer_);
     if (passthrough_      != XR_NULL_HANDLE) pfnDestroyPassthroughFB_(passthrough_);
@@ -222,8 +224,88 @@ void XrContext::CreateSession() {
     sessionInfo.systemId = systemId_;
     XR_CHECK(xrCreateSession(instance_, &sessionInfo, &session_));
     LOGI("XrSession created");
+
+    CreateActionSet();
+
     // xrBeginSession and xrCreateReferenceSpace are deferred to
     // HandleSessionStateChange(XR_SESSION_STATE_READY) as required by the spec.
+}
+
+// ── CreateActionSet ──────────────────────────────────────────────────────────
+
+void XrContext::CreateActionSet() {
+    // Create action set.
+    XrActionSetCreateInfo asInfo{XR_TYPE_ACTION_SET_CREATE_INFO};
+    std::strncpy(asInfo.actionSetName,          "hyperdesk",      XR_MAX_ACTION_SET_NAME_SIZE - 1);
+    std::strncpy(asInfo.localizedActionSetName,  "HyperDesk",     XR_MAX_LOCALIZED_ACTION_SET_NAME_SIZE - 1);
+    XR_CHECK(xrCreateActionSet(instance_, &asInfo, &actionSet_));
+
+    // Create haptic output action bound to both hands.
+    xrStringToPath(instance_, "/user/hand/left",  &handPaths_[0]);
+    xrStringToPath(instance_, "/user/hand/right", &handPaths_[1]);
+
+    XrActionCreateInfo actInfo{XR_TYPE_ACTION_CREATE_INFO};
+    actInfo.actionType          = XR_ACTION_TYPE_VIBRATION_OUTPUT;
+    actInfo.countSubactionPaths = 2;
+    actInfo.subactionPaths      = handPaths_;
+    std::strncpy(actInfo.actionName,           "haptic",        XR_MAX_ACTION_NAME_SIZE - 1);
+    std::strncpy(actInfo.localizedActionName,    "Haptic Pulse", XR_MAX_LOCALIZED_ACTION_NAME_SIZE - 1);
+    XR_CHECK(xrCreateAction(actionSet_, &actInfo, &hapticAction_));
+
+    // Suggest interaction profile bindings for Oculus Touch (Quest controllers).
+    XrPath interactionProfile;
+    xrStringToPath(instance_, "/interaction_profiles/oculus/touch_controller", &interactionProfile);
+
+    XrPath bindingPaths[2];
+    xrStringToPath(instance_, "/user/hand/left/output/haptic",  &bindingPaths[0]);
+    xrStringToPath(instance_, "/user/hand/right/output/haptic", &bindingPaths[1]);
+
+    XrActionSuggestedBinding bindings[2] = {
+        {hapticAction_, bindingPaths[0]},
+        {hapticAction_, bindingPaths[1]},
+    };
+
+    XrInteractionProfileSuggestedBinding suggestion{XR_TYPE_INTERACTION_PROFILE_SUGGESTED_BINDING};
+    suggestion.interactionProfile     = interactionProfile;
+    suggestion.suggestedBindings      = bindings;
+    suggestion.countSuggestedBindings = 2;
+    XR_CHECK(xrSuggestInteractionProfileBindings(instance_, &suggestion));
+
+    LOGI("Action set and haptic action created");
+}
+
+// ── TriggerHapticPulse ───────────────────────────────────────────────────────
+
+void XrContext::TriggerHapticPulse(float amplitude, int64_t durationNs) {
+    if (hapticAction_ == XR_NULL_HANDLE) return;
+
+    XrHapticVibration vibration{XR_TYPE_HAPTIC_VIBRATION};
+    vibration.amplitude = amplitude;
+    vibration.frequency = XR_FREQUENCY_UNSPECIFIED;
+    vibration.duration  = durationNs;
+
+    for (int i = 0; i < 2; ++i) {
+        XrHapticActionInfo info{XR_TYPE_HAPTIC_ACTION_INFO};
+        info.action         = hapticAction_;
+        info.subactionPath  = handPaths_[i];
+        xrApplyHapticFeedback(session_,
+            &info, reinterpret_cast<const XrHapticBaseHeader*>(&vibration));
+    }
+}
+
+// ── SyncActions ──────────────────────────────────────────────────────────────
+
+void XrContext::SyncActions() {
+    if (actionSet_ == XR_NULL_HANDLE) return;
+
+    XrActiveActionSet activeSet{};
+    activeSet.actionSet     = actionSet_;
+    activeSet.subactionPath = XR_NULL_PATH;
+
+    XrActionsSyncInfo syncInfo{XR_TYPE_ACTIONS_SYNC_INFO};
+    syncInfo.countActiveActionSets = 1;
+    syncInfo.activeActionSets      = &activeSet;
+    xrSyncActions(session_, &syncInfo);
 }
 
 // ── InitializePassthrough ─────────────────────────────────────────────────────
@@ -275,6 +357,14 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
     LOGI("Session state → %d", static_cast<int>(sessionState_));
     switch (sessionState_) {
         case XR_SESSION_STATE_READY: {
+            // Attach action sets before beginning the session's action loop.
+            if (actionSet_ != XR_NULL_HANDLE) {
+                XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
+                attachInfo.countActionSets = 1;
+                attachInfo.actionSets      = &actionSet_;
+                XR_CHECK(xrAttachSessionActionSets(session_, &attachInfo));
+            }
+
             XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
             beginInfo.primaryViewConfigurationType = XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;
             XR_CHECK(xrBeginSession(session_, &beginInfo));

@@ -1,9 +1,11 @@
 #include <android_native_app_glue.h>
 
 #include "util/Logger.h"
+#include "util/ErrorUtils.h"
 #include "xr/XrContext.h"
 #include "xr/XrPassthrough.h"
 #include "xr/XrCompositor.h"
+#include "xr/StatusOverlay.h"
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
 #include "camera/QrScanner.h"
@@ -37,6 +39,7 @@ struct AppState {
     std::array<VirtualMonitor*, MonitorLayout::kMaxMonitors>                  monitorPtrs{};
 
     std::unique_ptr<XrCompositor>         compositor;
+    std::unique_ptr<StatusOverlay>        statusOverlay;
     std::unique_ptr<QrScanner>            qrScanner;
 
     bool running       = true;
@@ -121,11 +124,27 @@ void android_main(android_app* app) {
         *state.frustumCuller,
         state.monitorPtrs);
 
+    // ── Status overlay (renders between passthrough and monitors) ─────────
+    state.statusOverlay = std::make_unique<StatusOverlay>(*state.xrContext, 512, 64);
+    state.statusOverlay->SetMessage("Ready to Scan...");
+    state.compositor->SetStatusOverlay(state.statusOverlay.get());
+
+    // RDP error callback — show error text in the status overlay.
+    state.rdpManager->SetErrorCallback([&state](uint32_t errorCode) {
+        const char* msg = ErrorUtils::RdpErrorToString(errorCode);
+        if (msg) {
+            LOGE("RDP error: %s (0x%08X)", msg, errorCode);
+            state.statusOverlay->SetMessage(msg);
+        }
+    });
+
     // Start QR scanner — connection is triggered when a valid QR code is scanned.
     state.qrScanner = std::make_unique<QrScanner>(app->activity);
     state.qrScanner->SetConnectCallback(
         [&state](const RdpConnectionManager::ConnectionParams& params) {
             LOGI("QR scan complete — connecting to %s:%u", params.hostname.c_str(), params.port);
+            state.xrContext->TriggerHapticPulse(0.8f, 200000000);  // 200ms pulse
+            state.statusOverlay->SetMessage("Connecting...");
             state.rdpManager->Connect(params);
             // Stop camera to save battery after successful connection.
             state.qrScanner->Stop();
@@ -157,13 +176,22 @@ void android_main(android_app* app) {
 
         if (!state.sessionActive) continue;
 
+        state.xrContext->SyncActions();
+
         XrFrameState frameState{XR_TYPE_FRAME_STATE};
         if (!state.xrContext->BeginFrame(frameState)) continue;
         state.compositor->RenderFrame(frameState);
 
         // Periodic scanner status indicator (~every 5s at 60fps).
-        if (++frameCount % 300 == 0 && state.qrScanner && state.qrScanner->IsRunning()) {
-            LOGI("QR scanner scanning...");
+        if (++frameCount % 300 == 0) {
+            if (state.qrScanner && state.qrScanner->IsRunning()) {
+                LOGI("QR scanner scanning...");
+            }
+            // Hide the status overlay once RDP is connected.
+            if (state.rdpManager->IsConnected() && state.statusOverlay->IsVisible()) {
+                state.statusOverlay->SetMessage("");
+                LOGI("RDP connected — status overlay hidden");
+            }
         }
     }
 

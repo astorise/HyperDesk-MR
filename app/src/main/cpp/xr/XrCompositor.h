@@ -10,6 +10,7 @@ class XrPassthrough;
 class MonitorLayout;
 class FrustumCuller;
 class VirtualMonitor;
+class StatusOverlay;
 
 // XrCompositor drives the per-frame composition loop:
 //   1. Frustum-cull monitors → pause/resume decoders via VirtualMonitor.
@@ -29,13 +30,17 @@ public:
     // Called once per iteration of the frame loop.
     void RenderFrame(const XrFrameState& frameState);
 
+    // Set an optional StatusOverlay to render between passthrough and monitors.
+    void SetStatusOverlay(StatusOverlay* overlay) { statusOverlay_ = overlay; }
+
 private:
     XrContext&                       ctx_;
     XrPassthrough&                   passthrough_;
     MonitorLayout&                   layout_;
     FrustumCuller&                   culler_;
     std::array<VirtualMonitor*, 16>  monitors_;
+    StatusOverlay*                   statusOverlay_ = nullptr;
 
-    // Reusable per-frame layer storage (no heap allocations in the hot path).
-    std::array<const XrCompositionLayerBaseHeader*, 17> layerPtrs_{};
+    // Reusable per-frame layer storage: passthrough + status overlay + 16 monitors.
+    std::array<const XrCompositionLayerBaseHeader*, 18> layerPtrs_{};
 };

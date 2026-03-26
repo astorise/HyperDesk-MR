@@ -36,6 +36,12 @@ public:
     // Enumerate stereo views for the predicted display time.
     bool LocateViews(XrTime predictedTime, std::array<XrView, 2>& views);
 
+    // Fire a short haptic pulse on both controllers.
+    void TriggerHapticPulse(float amplitude = 0.5f, int64_t durationNs = 100000000);
+
+    // Sync XR actions (call once per frame before using actions).
+    void SyncActions();
+
     // ── Accessors ─────────────────────────────────────────────────────────────
     XrInstance   GetInstance()       const { return instance_; }
     XrSession    GetSession()        const { return session_; }
@@ -87,6 +93,12 @@ private:
     PFN_xrCreateVulkanDeviceKHR             pfnCreateVulkanDeviceKHR_             = nullptr;
 
     void LoadExtensionFunctions();
+    void CreateActionSet();
     void HandleSessionStateChange(const XrEventDataSessionStateChanged& event,
                                   bool& exitRequested, bool& sessionActive);
+
+    // Haptic action set.
+    XrActionSet  actionSet_     = XR_NULL_HANDLE;
+    XrAction     hapticAction_  = XR_NULL_HANDLE;
+    XrPath       handPaths_[2]  = {};  // left, right
 };

@@ -24,6 +24,11 @@ RdpConnectionManager::~RdpConnectionManager() {
     Disconnect();
 }
 
+void RdpConnectionManager::SetErrorCallback(ErrorCallback cb) {
+    std::lock_guard lock(errorCbMutex_);
+    errorCallback_ = std::move(cb);
+}
+
 // ── Connect ───────────────────────────────────────────────────────────────────
 
 bool RdpConnectionManager::Connect(const ConnectionParams& params) {
@@ -89,9 +94,16 @@ void RdpConnectionManager::RunEventLoop() {
          freerdp_settings_get_string(instance_->context->settings, FreeRDP_ServerHostname));
 
     if (!freerdp_connect(instance_)) {
-        LOGE("freerdp_connect() failed");
+        uint32_t err = freerdp_get_last_error(instance_->context);
+        lastError_.store(err);
+        LOGE("freerdp_connect() failed — error 0x%08X", err);
+        {
+            std::lock_guard lock(errorCbMutex_);
+            if (errorCallback_) errorCallback_(err);
+        }
         return;
     }
+    lastError_.store(0);
     connected_.store(true);
     LOGI("RDP connected");
 
@@ -99,7 +111,13 @@ void RdpConnectionManager::RunEventLoop() {
         DWORD waitResult = freerdp_get_event_handles(instance_->context, nullptr, 0);
         (void)waitResult;
         if (!freerdp_check_event_handles(instance_->context)) {
-            LOGE("freerdp_check_event_handles failed — disconnecting");
+            uint32_t err = freerdp_get_last_error(instance_->context);
+            lastError_.store(err);
+            LOGE("freerdp_check_event_handles failed — error 0x%08X — disconnecting", err);
+            {
+                std::lock_guard lock(errorCbMutex_);
+                if (errorCallback_) errorCallback_(err);
+            }
             break;
         }
     }

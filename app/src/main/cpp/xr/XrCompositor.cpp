@@ -1,6 +1,7 @@
 #include "XrCompositor.h"
 #include "XrContext.h"
 #include "XrPassthrough.h"
+#include "StatusOverlay.h"
 #include "../scene/MonitorLayout.h"
 #include "../scene/FrustumCuller.h"
 #include "../scene/VirtualMonitor.h"
@@ -44,6 +45,14 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
     // Passthrough layer is first when available.
     if (auto* pt = passthrough_.GetLayer()) {
         layerPtrs_[layerCount++] = pt;
+    }
+
+    // Status overlay renders above passthrough but below monitors.
+    if (statusOverlay_) {
+        if (auto* overlay = statusOverlay_->GetCompositionLayer(ctx_.GetWorldSpace())) {
+            layerPtrs_[layerCount++] =
+                reinterpret_cast<const XrCompositionLayerBaseHeader*>(overlay);
+        }
     }
 
     // Add a quad layer for each active, visible monitor.
