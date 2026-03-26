@@ -21,9 +21,13 @@ android {
         externalNativeBuild {
             cmake {
                 cppFlags "-std=c++20"
-                arguments "-DANDROID_STL=c++_shared",
-                          "-DANDROID_PLATFORM=android-32",
-                          "-DANDROID_ARM_NEON=TRUE"
+                def args = ["-DANDROID_STL=c++_shared",
+                            "-DANDROID_PLATFORM=android-32",
+                            "-DANDROID_ARM_NEON=TRUE"]
+                if (project.hasProperty('cmakeArgs')) {
+                    args.add(project.cmakeArgs)
+                }
+                arguments(*args)
             }
         }
     }

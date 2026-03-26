@@ -36,7 +36,6 @@ public:
     bool IsRunning() const { return running_.load(); }
 
 private:
-    ANativeActivity*   activity_ = nullptr;
     ACameraManager*    cameraMgr_ = nullptr;
     ACameraDevice*     cameraDevice_ = nullptr;
     AImageReader*      imageReader_ = nullptr;

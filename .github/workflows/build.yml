@@ -104,6 +104,10 @@ jobs:
           cp "$LIBSSL_SO"    third_party/openssl/libs/android.arm64-v8a/libssl_3.so
           cp "$LIBCRYPTO_SO" third_party/openssl/libs/android.arm64-v8a/libcrypto_3.so
 
+          # ── ZXing-cpp (pre-fetch for FetchContent) ──────────────────────────
+          git clone --depth=1 --branch v2.2.1 \
+            https://github.com/zxing-cpp/zxing-cpp.git /tmp/zxing-cpp
+
       - name: Generate Gradle wrapper jar
         run: |
           mkdir /tmp/wg
@@ -122,7 +126,7 @@ jobs:
           find third_party/freerdp -type f | sort
 
       - name: Build debug APK
-        run: ./gradlew assembleDebug
+        run: ./gradlew assembleDebug -PcmakeArgs="-DFETCHCONTENT_SOURCE_DIR_ZXING-CPP=/tmp/zxing-cpp"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4

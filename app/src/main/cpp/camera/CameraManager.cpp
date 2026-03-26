@@ -7,7 +7,7 @@ static constexpr int32_t kImageWidth  = 640;
 static constexpr int32_t kImageHeight = 480;
 static constexpr int32_t kMaxImages   = 2;
 
-CameraManager::CameraManager(ANativeActivity* activity) : activity_(activity) {}
+CameraManager::CameraManager(ANativeActivity* /*activity*/) {}
 
 CameraManager::~CameraManager() {
     Stop();
