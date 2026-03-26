@@ -4,6 +4,7 @@
 #include "../util/Logger.h"
 
 #include <freerdp/channels/channels.h>
+#include <winpr/synch.h>
 
 #include <algorithm>
 #include <cstring>
@@ -108,8 +109,19 @@ void RdpConnectionManager::RunEventLoop() {
     LOGI("RDP connected");
 
     while (!stopFlag_.load()) {
-        DWORD waitResult = freerdp_get_event_handles(instance_->context, nullptr, 0);
-        (void)waitResult;
+        HANDLE handles[MAXIMUM_WAIT_OBJECTS] = {};
+        DWORD nCount = freerdp_get_event_handles(instance_->context, handles, MAXIMUM_WAIT_OBJECTS);
+        if (nCount == 0) {
+            LOGE("freerdp_get_event_handles returned 0 — disconnecting");
+            break;
+        }
+
+        DWORD waitStatus = WaitForMultipleObjects(nCount, handles, FALSE, 100);
+        if (waitStatus == WAIT_FAILED) {
+            LOGE("WaitForMultipleObjects failed — disconnecting");
+            break;
+        }
+
         if (!freerdp_check_event_handles(instance_->context)) {
             uint32_t err = freerdp_get_last_error(instance_->context);
             lastError_.store(err);
