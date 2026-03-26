@@ -1,8 +1,8 @@
 #include "QrScanner.h"
 #include "../util/Logger.h"
 
-#include <ZXing/ReadBarcode.h>
-#include <ZXing/ImageView.h>
+#include <ReadBarcode.h>
+#include <ImageView.h>
 
 #include <cstdlib>
 #include <cstring>
