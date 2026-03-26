@@ -6,6 +6,7 @@
 #include "xr/XrCompositor.h"
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
+#include "camera/QrScanner.h"
 #include "scene/MonitorLayout.h"
 #include "scene/FrustumCuller.h"
 #include "scene/VirtualMonitor.h"
@@ -36,6 +37,7 @@ struct AppState {
     std::array<VirtualMonitor*, MonitorLayout::kMaxMonitors>                  monitorPtrs{};
 
     std::unique_ptr<XrCompositor>         compositor;
+    std::unique_ptr<QrScanner>            qrScanner;
 
     bool running       = true;
     bool sessionActive = false;
@@ -119,17 +121,23 @@ void android_main(android_app* app) {
         *state.frustumCuller,
         state.monitorPtrs);
 
-    // Connect to RDP server. Address/credentials come from config in production.
-    RdpConnectionManager::ConnectionParams params{
-        .hostname = "192.168.1.100",
-        .port     = 3389,
-        .username = "user",
-        .password = "password",
-        .domain   = "",
-    };
-    state.rdpManager->Connect(params);
+    // Start QR scanner — connection is triggered when a valid QR code is scanned.
+    state.qrScanner = std::make_unique<QrScanner>(app->activity);
+    state.qrScanner->SetConnectCallback(
+        [&state](const RdpConnectionManager::ConnectionParams& params) {
+            LOGI("QR scan complete — connecting to %s:%u", params.hostname.c_str(), params.port);
+            state.rdpManager->Connect(params);
+            // Stop camera to save battery after successful connection.
+            state.qrScanner->Stop();
+        });
+    if (state.qrScanner->Start()) {
+        LOGI("QR scanner active — point headset at a QR code to connect");
+    } else {
+        LOGE("QR scanner failed to start — check CAMERA permission");
+    }
 
     // ── Main loop ─────────────────────────────────────────────────────────────
+    uint64_t frameCount = 0;
     while (state.running) {
         int events = 0;
         android_poll_source* source = nullptr;
@@ -152,9 +160,15 @@ void android_main(android_app* app) {
         XrFrameState frameState{XR_TYPE_FRAME_STATE};
         if (!state.xrContext->BeginFrame(frameState)) continue;
         state.compositor->RenderFrame(frameState);
+
+        // Periodic scanner status indicator (~every 5s at 60fps).
+        if (++frameCount % 300 == 0 && state.qrScanner && state.qrScanner->IsRunning()) {
+            LOGI("QR scanner scanning...");
+        }
     }
 
     // ── Teardown ──────────────────────────────────────────────────────────────
+    if (state.qrScanner) state.qrScanner->Stop();
     state.rdpManager->Disconnect();
     state.passthrough->Pause();
 

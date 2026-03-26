@@ -49,6 +49,7 @@ public:
     XrPassthroughFB      GetPassthroughFB()      const { return passthrough_; }
     XrPassthroughLayerFB GetPassthroughLayerFB() const { return passthroughLayer_; }
     bool                 IsPassthroughAvailable() const { return passthroughAvailable_; }
+    bool                 IsCameraAccessAvailable() const { return cameraAccessAvailable_; }
 
 private:
     android_app*         app_              = nullptr;
@@ -58,6 +59,7 @@ private:
     XrSpace              worldSpace_       = XR_NULL_HANDLE;
     XrSessionState       sessionState_     = XR_SESSION_STATE_UNKNOWN;
     bool                 passthroughAvailable_ = false;
+    bool                 cameraAccessAvailable_ = false;
     XrPassthroughFB      passthrough_          = XR_NULL_HANDLE;
     XrPassthroughLayerFB passthroughLayer_     = XR_NULL_HANDLE;
 

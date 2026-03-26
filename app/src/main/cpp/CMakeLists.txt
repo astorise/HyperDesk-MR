@@ -16,6 +16,21 @@ add_compile_options(
 )
 add_link_options(-Wl,--gc-sections)
 
+# ── ZXing-cpp (QR code decoding) ──────────────────────────────────────────────
+include(FetchContent)
+FetchContent_Declare(
+    zxing-cpp
+    GIT_REPOSITORY https://github.com/zxing-cpp/zxing-cpp.git
+    GIT_TAG        v2.2.1
+    GIT_SHALLOW    TRUE
+)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_BLACKBOX_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_PYTHON_MODULE OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(zxing-cpp)
+
 # ── Paths to third-party dependencies ─────────────────────────────────────────
 # Resolve relative to the repo root (4 levels up from app/src/main/cpp/)
 get_filename_component(REPO_ROOT
@@ -47,7 +62,9 @@ target_compile_options(native_app_glue PRIVATE -Wno-unused-parameter)
 find_library(log-lib     log)
 find_library(android-lib android)
 find_library(mediandk-lib mediandk)
-find_library(vulkan-lib  vulkan)
+find_library(vulkan-lib   vulkan)
+find_library(camera2ndk-lib camera2ndk)
+find_library(nativewindow-lib nativewindow)
 
 # ── OpenXR Loader (Meta XR SDK prebuilt) ──────────────────────────────────────
 add_library(openxr_loader SHARED IMPORTED)
@@ -91,6 +108,8 @@ add_library(hyperdesk_mr SHARED
     scene/MonitorLayout.cpp
     scene/FrustumCuller.cpp
     scene/VirtualMonitor.cpp
+    camera/CameraManager.cpp
+    camera/QrScanner.cpp
 )
 
 target_include_directories(hyperdesk_mr PRIVATE
@@ -121,8 +140,11 @@ target_link_libraries(hyperdesk_mr
         winpr3
         ssl_3
         crypto_3
+        ZXing::ZXing
         ${log-lib}
         ${android-lib}
         ${mediandk-lib}
         ${vulkan-lib}
+        ${camera2ndk-lib}
+        ${nativewindow-lib}
 )

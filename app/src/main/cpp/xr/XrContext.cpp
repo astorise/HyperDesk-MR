@@ -50,10 +50,13 @@ void XrContext::CreateInstance() {
     for (const auto& ext : availableExts) {
         if (std::strcmp(ext.extensionName, XR_FB_PASSTHROUGH_EXTENSION_NAME) == 0) {
             passthroughAvailable_ = true;
-            break;
+        }
+        if (std::strcmp(ext.extensionName, "XR_FB_camera_access") == 0) {
+            cameraAccessAvailable_ = true;
         }
     }
     LOGI("XR_FB_passthrough: %s", passthroughAvailable_ ? "available" : "not available");
+    LOGI("XR_FB_camera_access: %s", cameraAccessAvailable_ ? "available" : "not available");
 
     std::vector<const char*> enabledExtensions = {
         XR_KHR_ANDROID_CREATE_INSTANCE_EXTENSION_NAME,
@@ -61,6 +64,9 @@ void XrContext::CreateInstance() {
     };
     if (passthroughAvailable_) {
         enabledExtensions.push_back(XR_FB_PASSTHROUGH_EXTENSION_NAME);
+    }
+    if (cameraAccessAvailable_) {
+        enabledExtensions.push_back("XR_FB_camera_access");
     }
 
     XrInstanceCreateInfoAndroidKHR androidInfo{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
@@ -313,7 +319,9 @@ bool XrContext::EndFrame(const XrFrameState& frameState,
                          const XrCompositionLayerBaseHeader* const* layers) {
     XrFrameEndInfo endInfo{XR_TYPE_FRAME_END_INFO};
     endInfo.displayTime          = frameState.predictedDisplayTime;
-    endInfo.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
+    endInfo.environmentBlendMode = passthroughAvailable_
+        ? XR_ENVIRONMENT_BLEND_MODE_ALPHA_BLEND
+        : XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
     endInfo.layerCount           = layerCount;
     endInfo.layers               = layers;
     XR_CHECK(xrEndFrame(session_, &endInfo));
