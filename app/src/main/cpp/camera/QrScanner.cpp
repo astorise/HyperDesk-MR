@@ -20,10 +20,25 @@ static std::string ExtractJsonString(const std::string& json, const std::string&
     pos = json.find('"', pos + 1);
     if (pos == std::string::npos) return {};
 
-    auto end = json.find('"', pos + 1);
-    if (end == std::string::npos) return {};
-
-    return json.substr(pos + 1, end - pos - 1);
+    // Walk the string handling JSON escape sequences.
+    std::string result;
+    for (size_t i = pos + 1; i < json.size(); ++i) {
+        if (json[i] == '"') break;           // unescaped quote → end of string
+        if (json[i] == '\\' && i + 1 < json.size()) {
+            ++i;  // consume the escaped character
+            switch (json[i]) {
+                case '"':  result += '"';  break;
+                case '\\': result += '\\'; break;
+                case '/':  result += '/';  break;
+                case 'n':  result += '\n'; break;
+                case 't':  result += '\t'; break;
+                default:   result += json[i]; break;
+            }
+        } else {
+            result += json[i];
+        }
+    }
+    return result;
 }
 
 static int ExtractJsonInt(const std::string& json, const std::string& key, int defaultVal) {
@@ -126,6 +141,14 @@ bool QrScanner::ParseConnectionParams(const std::string& json,
     out.password = ExtractJsonString(json, "p");
     out.domain   = ExtractJsonString(json, "d");
     out.port     = static_cast<uint16_t>(ExtractJsonInt(json, "port", 3389));
+
+    // If username contains DOMAIN\user, split into domain + username.
+    auto sep = out.username.find('\\');
+    if (sep != std::string::npos && out.domain.empty()) {
+        out.domain   = out.username.substr(0, sep);
+        out.username = out.username.substr(sep + 1);
+        LOGI("QrScanner: split domain='%s' username='%s'", out.domain.c_str(), out.username.c_str());
+    }
 
     if (out.hostname.empty()) {
         LOGE("QrScanner: missing 'h' (hostname) in QR JSON");
