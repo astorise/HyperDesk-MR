@@ -83,6 +83,9 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     // NLA (Network Level Authentication) — enable for modern Windows hosts.
     freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, TRUE);
 
+    // Accept self-signed RDP certificates without user prompt.
+    freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
+
     // Set a large desktop area to accommodate 16 monitors at 1920x1080.
     freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920 * 4);
     freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 1080 * 4);
