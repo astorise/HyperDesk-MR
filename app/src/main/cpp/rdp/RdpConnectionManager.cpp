@@ -80,8 +80,11 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_bool(settings, FreeRDP_GfxH264,                 TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444,               FALSE);
 
-    // NLA (Network Level Authentication) — enable for modern Windows hosts.
-    freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, TRUE);
+    // Disable NLA — OpenSSL on Android lacks the LEGACY provider (MD4)
+    // which NTLM password hashing requires.  Fall back to TLS security.
+    freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_TlsSecurity, TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_RdpSecurity, TRUE);
 
     // Accept self-signed RDP certificates without user prompt.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
