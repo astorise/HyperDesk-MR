@@ -2,12 +2,25 @@
 #include "RdpDisplayControl.h"
 #include "../scene/VirtualMonitor.h"
 #include "../util/Logger.h"
+#include "../xr/StatusOverlay.h"
 
 #include <freerdp/channels/channels.h>
 #include <winpr/synch.h>
 
 #include <algorithm>
 #include <cstring>
+#include <cstdio>
+
+// Log to both logcat and on-screen debug overlay.
+static void ScreenLog(const char* fmt, ...) {
+    char buf[256];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, args);
+    va_end(args);
+    LOGI("%s", buf);
+    if (StatusOverlay::sInstance) StatusOverlay::sInstance->AddLog(buf);
+}
 
 // ── Constructor / Destructor ──────────────────────────────────────────────────
 
@@ -100,10 +113,12 @@ void RdpConnectionManager::RunEventLoop() {
     LOGI("RDP thread: connecting to %s",
          freerdp_settings_get_string(instance_->context->settings, FreeRDP_ServerHostname));
 
+    ScreenLog("TCP connecting to %s...",
+              freerdp_settings_get_string(instance_->context->settings, FreeRDP_ServerHostname));
     if (!freerdp_connect(instance_)) {
         uint32_t err = freerdp_get_last_error(instance_->context);
         lastError_.store(err);
-        LOGE("freerdp_connect() failed — error 0x%08X", err);
+        ScreenLog("[ERR] freerdp_connect failed 0x%08X", err);
         {
             std::lock_guard lock(errorCbMutex_);
             if (errorCallback_) errorCallback_(err);
@@ -112,7 +127,7 @@ void RdpConnectionManager::RunEventLoop() {
     }
     lastError_.store(0);
     connected_.store(true);
-    LOGI("RDP connected");
+    ScreenLog("[OK] RDP connected");
 
     while (!stopFlag_.load()) {
         HANDLE handles[MAXIMUM_WAIT_OBJECTS] = {};
@@ -131,7 +146,7 @@ void RdpConnectionManager::RunEventLoop() {
         if (!freerdp_check_event_handles(instance_->context)) {
             uint32_t err = freerdp_get_last_error(instance_->context);
             lastError_.store(err);
-            LOGE("freerdp_check_event_handles failed — error 0x%08X — disconnecting", err);
+            ScreenLog("[ERR] check_event failed 0x%08X", err);
             {
                 std::lock_guard lock(errorCbMutex_);
                 if (errorCallback_) errorCallback_(err);
@@ -161,17 +176,17 @@ void RdpConnectionManager::Disconnect() {
 // ── Static callbacks ──────────────────────────────────────────────────────────
 
 BOOL RdpConnectionManager::OnPreConnect(freerdp* /*instance*/) {
-    LOGI("RDP: OnPreConnect");
+    ScreenLog("[OK] TLS handshake...");
     return TRUE;
 }
 
 BOOL RdpConnectionManager::OnPostConnect(freerdp* /*instance*/) {
-    LOGI("RDP: OnPostConnect");
+    ScreenLog("[OK] RDP session established");
     return TRUE;
 }
 
 void RdpConnectionManager::OnPostDisconnect(freerdp* instance) {
-    LOGI("RDP: OnPostDisconnect");
+    ScreenLog("[WARN] RDP disconnected");
     auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
     if (ctx && ctx->self) {
         ctx->self->connected_.store(false);
@@ -187,16 +202,18 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
 
     RdpConnectionManager* self = ctx->self;
 
+    ScreenLog("[OK] Channel: %s", e->name);
+
     if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
         ctx->disp = static_cast<DispClientContext*>(e->pInterface);
         if (ctx->disp) {
-            LOGI("RDP: DispClientContext obtained");
+            ScreenLog("[OK] Display control ready");
             self->displayControl_.Attach(ctx->disp);
         }
     } else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         ctx->gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
         if (ctx->gfx) {
-            LOGI("RDP: RdpgfxClientContext obtained");
+            ScreenLog("[OK] GFX pipeline ready (H.264)");
             ctx->gfx->CapsAdvertise      = OnGfxCapsAdvertise;
             ctx->gfx->SurfaceCommand     = OnGfxSurfaceCommand;
             ctx->gfx->CreateSurface      = OnGfxSurfaceCreated;
@@ -205,7 +222,7 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
             ctx->gfx->EndFrame           = OnGfxEndFrame;
             ctx->gfx->custom             = self;
         } else {
-            LOGW("RDP: GFX channel not available");
+            ScreenLog("[WARN] GFX channel not available");
         }
     }
 }
@@ -248,8 +265,8 @@ UINT RdpConnectionManager::OnGfxSurfaceCreated(RdpgfxClientContext* gfx,
     uint32_t slot       = pdu->surfaceId % kMaxMonitors;
     uint32_t monitorIdx = self->nextMonitorIdx_++;
     self->surfaceToMonitor_[slot] = monitorIdx;
-    LOGI("RDP: GFX surface created id=%u → monitor[%u] (%ux%u)",
-         pdu->surfaceId, monitorIdx, pdu->width, pdu->height);
+    ScreenLog("[OK] Surface %u -> monitor[%u] %ux%u",
+              pdu->surfaceId, monitorIdx, pdu->width, pdu->height);
     return CHANNEL_RC_OK;
 }
 

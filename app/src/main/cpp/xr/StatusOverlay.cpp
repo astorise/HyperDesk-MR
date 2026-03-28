@@ -242,10 +242,13 @@ void DrawGlyph(uint8_t* rgba, uint32_t texW, uint32_t texH,
 
 // ── Constructor / Destructor ────────────────────────────────────────────────
 
+StatusOverlay* StatusOverlay::sInstance = nullptr;
+
 StatusOverlay::StatusOverlay(XrContext& ctx, uint32_t texWidth, uint32_t texHeight)
     : ctx_(ctx), texWidth_(texWidth), texHeight_(texHeight) {
     CreateSwapchain();
     CreateStagingBuffer();
+    sInstance = this;
     LOGI("StatusOverlay: created (%ux%u)", texWidth_, texHeight_);
 }
 
@@ -263,10 +266,21 @@ StatusOverlay::~StatusOverlay() {
 
 void StatusOverlay::SetMessage(const std::string& message) {
     std::lock_guard lock(messageMutex_);
-    if (message == currentMessage_) return;
-    currentMessage_ = message;
-    messageDirty_   = true;
+    logLines_.clear();
+    if (!message.empty()) {
+        logLines_.push_back(message);
+    }
+    messageDirty_ = true;
     visible_.store(!message.empty());
+}
+
+void StatusOverlay::AddLog(const std::string& line) {
+    std::lock_guard lock(messageMutex_);
+    logLines_.push_back(line);
+    while (static_cast<int>(logLines_.size()) > kMaxLogLines)
+        logLines_.pop_front();
+    messageDirty_ = true;
+    visible_.store(true);
 }
 
 // ── GetCompositionLayer ─────────────────────────────────────────────────────
@@ -274,15 +288,11 @@ void StatusOverlay::SetMessage(const std::string& message) {
 const XrCompositionLayerQuad* StatusOverlay::GetCompositionLayer(XrSpace worldSpace) {
     if (!visible_.load()) return nullptr;
 
-    std::string msg;
     bool dirty = false;
     {
         std::lock_guard lock(messageMutex_);
         dirty = messageDirty_;
-        if (dirty) {
-            msg = currentMessage_;
-            messageDirty_ = false;
-        }
+        if (dirty) messageDirty_ = false;
     }
 
     // Acquire swapchain image.
@@ -296,7 +306,7 @@ const XrCompositionLayerQuad* StatusOverlay::GetCompositionLayer(XrSpace worldSp
     if (XR_FAILED(xrWaitSwapchainImage(swapchain_, &waitInfo))) return nullptr;
 
     if (dirty) {
-        RenderTextToStaging(msg);
+        RenderTextToStaging();
         UploadStagingToSwapchainImage(swapchainImages_[imageIndex]);
     }
 
@@ -314,10 +324,10 @@ const XrCompositionLayerQuad* StatusOverlay::GetCompositionLayer(XrSpace worldSp
     sub.imageArrayIndex       = 0;
     compositionLayer_.subImage = sub;
 
-    // Place quad at eye height (~1.5m), 1.5m in front, facing the user.
+    // Place debug console at eye height, 1.5m in front, facing the user.
     compositionLayer_.pose.orientation = {0.f, 0.f, 0.f, 1.f};
     compositionLayer_.pose.position   = {0.f, 1.2f, -1.5f};
-    compositionLayer_.size            = {0.6f, 0.15f};
+    compositionLayer_.size            = {0.9f, 0.45f};
 
     XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     xrReleaseSwapchainImage(swapchain_, &releaseInfo);
@@ -389,30 +399,48 @@ void StatusOverlay::CreateStagingBuffer() {
     VK_CHECK(vkMapMemory(dev, stagingMemory_, 0, bufferSize, 0, &stagingMapped_));
 }
 
-void StatusOverlay::RenderTextToStaging(const std::string& message) {
+void StatusOverlay::RenderTextToStaging() {
     auto* rgba = static_cast<uint8_t*>(stagingMapped_);
     size_t totalBytes = texWidth_ * texHeight_ * 4;
 
     // Clear to semi-transparent dark background (RGBA).
     for (size_t i = 0; i < totalBytes; i += 4) {
-        rgba[i + 0] = 20;   // R
-        rgba[i + 1] = 20;   // G
-        rgba[i + 2] = 30;   // B
-        rgba[i + 3] = 180;  // A
+        rgba[i + 0] = 15;   // R
+        rgba[i + 1] = 15;   // G
+        rgba[i + 2] = 25;   // B
+        rgba[i + 3] = 200;  // A
     }
 
-    // Centre the text horizontally and vertically.
-    int charPixelW = kGlyphW * kScale + kGlyphSpacing * kScale;
-    int textW      = static_cast<int>(message.size()) * charPixelW;
-    int textH      = kGlyphH * kScale;
-    int startX     = std::max(0, (static_cast<int>(texWidth_)  - textW) / 2);
-    int startY     = std::max(0, (static_cast<int>(texHeight_) - textH) / 2);
+    std::deque<std::string> lines;
+    {
+        std::lock_guard lock(messageMutex_);
+        lines = logLines_;
+    }
 
-    for (size_t i = 0; i < message.size(); ++i) {
-        DrawGlyph(rgba, texWidth_, texHeight_,
-                  startX + static_cast<int>(i) * charPixelW, startY,
-                  message[i],
-                  255, 255, 255);
+    int charPixelW  = kGlyphW * kScale + kGlyphSpacing * kScale;
+    int lineHeight  = kGlyphH * kScale + 4;  // 4px spacing between lines
+    int margin      = 6;
+
+    for (size_t lineIdx = 0; lineIdx < lines.size(); ++lineIdx) {
+        const std::string& line = lines[lineIdx];
+        int y = margin + static_cast<int>(lineIdx) * lineHeight;
+
+        // Choose color: green for success, red for errors, yellow for warnings, white default
+        uint8_t r = 200, g = 200, b = 200;
+        if (line.find("[OK]") != std::string::npos || line.find("connected") != std::string::npos) {
+            r = 80; g = 255; b = 80;
+        } else if (line.find("[ERR]") != std::string::npos || line.find("failed") != std::string::npos ||
+                   line.find("error") != std::string::npos || line.find("Error") != std::string::npos) {
+            r = 255; g = 80; b = 80;
+        } else if (line.find("[WARN]") != std::string::npos || line.find("...") != std::string::npos) {
+            r = 255; g = 200; b = 60;
+        }
+
+        for (size_t ci = 0; ci < line.size(); ++ci) {
+            DrawGlyph(rgba, texWidth_, texHeight_,
+                      margin + static_cast<int>(ci) * charPixelW, y,
+                      line[ci], r, g, b);
+        }
     }
 }
 

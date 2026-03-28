@@ -7,13 +7,14 @@
 
 #include <atomic>
 #include <cstdint>
+#include <deque>
 #include <mutex>
 #include <string>
 #include <vector>
 
 class XrContext;
 
-// StatusOverlay renders a small text-status quad in MR space.
+// StatusOverlay renders a multi-line debug console quad in MR space.
 // It owns its own XrSwapchain and XrCompositionLayerQuad, independent
 // of the VirtualMonitor pipeline.  Text is rendered as a simple
 // CPU-generated RGBA texture written directly to the swapchain's
@@ -28,13 +29,22 @@ public:
     // Empty string hides the overlay.
     void SetMessage(const std::string& message);
 
+    // Append a debug log line.  Thread-safe.
+    // The overlay keeps the last kMaxLogLines and stays visible.
+    void AddLog(const std::string& line);
+
     // Returns the composition layer for this frame, or nullptr if hidden.
     // Called from the render loop thread.
     const XrCompositionLayerQuad* GetCompositionLayer(XrSpace worldSpace);
 
     bool IsVisible() const { return visible_.load(); }
 
+    // Global instance for debug logging from anywhere.
+    static StatusOverlay* sInstance;
+
 private:
+    static constexpr int kMaxLogLines = 14;
+
     XrContext&   ctx_;
     uint32_t     texWidth_;
     uint32_t     texHeight_;
@@ -50,13 +60,13 @@ private:
     // Swapchain image info.
     std::vector<VkImage> swapchainImages_;
 
-    std::mutex        messageMutex_;
-    std::string       currentMessage_;
-    bool              messageDirty_ = false;
-    std::atomic<bool> visible_{false};
+    std::mutex              messageMutex_;
+    std::deque<std::string> logLines_;
+    bool                    messageDirty_ = false;
+    std::atomic<bool>       visible_{false};
 
     void CreateSwapchain();
     void CreateStagingBuffer();
-    void RenderTextToStaging(const std::string& message);
+    void RenderTextToStaging();
     void UploadStagingToSwapchainImage(VkImage image);
 };
