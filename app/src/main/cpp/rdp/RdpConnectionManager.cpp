@@ -5,6 +5,7 @@
 #include "../xr/StatusOverlay.h"
 
 #include <freerdp/channels/channels.h>
+#include <freerdp/gdi/gdi.h>
 #include <winpr/synch.h>
 
 #include <algorithm>
@@ -87,6 +88,10 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_string(settings, FreeRDP_Username,       params.username.c_str());
     freerdp_settings_set_string(settings, FreeRDP_Password,       params.password.c_str());
     freerdp_settings_set_string(settings, FreeRDP_Domain,         params.domain.c_str());
+
+    // Use software GDI — required for FreeRDP to handle incoming
+    // graphics data internally without application-side callbacks.
+    freerdp_settings_set_bool(settings, FreeRDP_SoftwareGdi, TRUE);
 
     // Enable H.264 graphics pipeline.
     freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline, TRUE);
@@ -175,13 +180,24 @@ void RdpConnectionManager::Disconnect() {
 
 // ── Static callbacks ──────────────────────────────────────────────────────────
 
-BOOL RdpConnectionManager::OnPreConnect(freerdp* /*instance*/) {
+static BOOL OnBeginPaint(rdpContext* /*context*/) { return TRUE; }
+static BOOL OnEndPaint(rdpContext* /*context*/) { return TRUE; }
+
+BOOL RdpConnectionManager::OnPreConnect(freerdp* instance) {
     ScreenLog("[OK] TLS handshake...");
+    rdpUpdate* update = instance->context->update;
+    update->BeginPaint = OnBeginPaint;
+    update->EndPaint   = OnEndPaint;
     return TRUE;
 }
 
-BOOL RdpConnectionManager::OnPostConnect(freerdp* /*instance*/) {
-    ScreenLog("[OK] RDP session established");
+BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
+    ScreenLog("[OK] RDP session established — initializing GDI...");
+    if (!gdi_init(instance, PIXEL_FORMAT_BGRA32)) {
+        ScreenLog("[ERR] gdi_init() failed");
+        return FALSE;
+    }
+    ScreenLog("[OK] GDI initialized");
     return TRUE;
 }
 
