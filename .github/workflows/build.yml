@@ -2,9 +2,10 @@ name: Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, fix/restore-qr-friday ]
   pull_request:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
