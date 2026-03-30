@@ -126,7 +126,7 @@ void android_main(android_app* app) {
 
     // ── Status overlay (debug console between passthrough and monitors) ───
     state.statusOverlay = std::make_unique<StatusOverlay>(*state.xrContext, 640, 320);
-    state.statusOverlay->AddLog("HyperDesk MR ready");
+    state.statusOverlay->AddLog("HyperDesk MR v31");
     state.compositor->SetStatusOverlay(state.statusOverlay.get());
 
     // RDP error callback — show error text in the status overlay.
