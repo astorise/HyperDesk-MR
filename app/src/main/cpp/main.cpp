@@ -22,6 +22,39 @@
 // jniVm is the global JavaVM pointer in winpr/libwinpr/utils/android.c.
 // winpr_jni_attach_thread asserts it is non-null before any JNI call.
 extern "C" JavaVM* jniVm;
+
+// Request CAMERA permission via JNI. Returns true if already granted.
+// android_main runs on a thread already attached to the JVM by the glue layer.
+// Use GetEnv to detect attachment state — never call DetachCurrentThread on a
+// thread we did not attach ourselves (doing so would break ACameraManager).
+static bool RequestCameraPermission(ANativeActivity* activity) {
+    JNIEnv* env = nullptr;
+    bool needDetach = false;
+    if (activity->vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_EDETACHED) {
+        activity->vm->AttachCurrentThread(&env, nullptr);
+        needDetach = true;
+    }
+
+    jclass  ctxClass  = env->FindClass("android/content/Context");
+    jmethodID chkPerm = env->GetMethodID(ctxClass, "checkSelfPermission",
+                                          "(Ljava/lang/String;)I");
+    jstring perm   = env->NewStringUTF("android.permission.CAMERA");
+    jint    result = env->CallIntMethod(activity->clazz, chkPerm, perm);
+    bool    granted = (result == 0); // PackageManager.PERMISSION_GRANTED
+
+    if (!granted) {
+        jclass    actClass  = env->FindClass("android/app/Activity");
+        jmethodID reqPerms  = env->GetMethodID(actClass, "requestPermissions",
+                                                "([Ljava/lang/String;I)V");
+        jobjectArray arr = env->NewObjectArray(1,
+                               env->FindClass("java/lang/String"), perm);
+        env->CallVoidMethod(activity->clazz, reqPerms, arr, 1001);
+        env->DeleteLocalRef(arr);
+    }
+    env->DeleteLocalRef(perm);
+    if (needDetach) activity->vm->DetachCurrentThread();
+    return granted;
+}
 #endif
 
 // ── Application state ─────────────────────────────────────────────────────────
@@ -141,6 +174,10 @@ void android_main(android_app* app) {
         }
     });
 
+    // Request CAMERA permission (runtime). If not yet granted the dialog is
+    // shown; we'll retry QrScanner::Start() in the main loop until it works.
+    RequestCameraPermission(app->activity);
+
     // Start QR scanner — connection is triggered when a valid QR code is scanned.
     state.qrScanner = std::make_unique<QrScanner>(app->activity);
     state.qrScanner->SetConnectCallback(
@@ -203,7 +240,14 @@ void android_main(android_app* app) {
 
         // Periodic scanner status indicator (~every 5s at 72fps).
         if (++frameCount % 360 == 0) {
-            if (state.qrScanner && state.qrScanner->IsRunning()) {
+            if (state.qrScanner && !state.qrScanner->IsRunning()) {
+                // Retry start — permission may have been granted since startup.
+                if (state.qrScanner->Start()) {
+                    LOGI("QR scanner started (permission now granted)");
+                    state.statusOverlay->AddLog("[OK] Camera started");
+                    state.statusOverlay->AddLog("Point headset at QR code...");
+                }
+            } else if (state.qrScanner && state.qrScanner->IsRunning()) {
                 LOGI("QR scanner scanning...");
             }
             // Keep debug overlay visible when connected (don't hide it).
