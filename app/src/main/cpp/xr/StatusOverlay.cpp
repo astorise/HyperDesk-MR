@@ -253,6 +253,7 @@ StatusOverlay::StatusOverlay(XrContext& ctx, uint32_t texWidth, uint32_t texHeig
 }
 
 StatusOverlay::~StatusOverlay() {
+    if (sInstance == this) sInstance = nullptr;
     VkDevice dev = ctx_.GetVkDevice();
     if (stagingBuffer_ != VK_NULL_HANDLE) {
         if (stagingMapped_) vkUnmapMemory(dev, stagingMemory_);
@@ -266,6 +267,7 @@ StatusOverlay::~StatusOverlay() {
 
 void StatusOverlay::SetMessage(const std::string& message) {
     std::lock_guard lock(messageMutex_);
+    statusLines_.fill(std::string{});
     logLines_.clear();
     if (!message.empty()) {
         logLines_.push_back(message);
@@ -281,6 +283,27 @@ void StatusOverlay::AddLog(const std::string& line) {
         logLines_.pop_front();
     messageDirty_ = true;
     visible_.store(true);
+}
+
+void StatusOverlay::SetStatusLine(size_t index, const std::string& line) {
+    if (index >= kMaxStatusLines) return;
+
+    std::lock_guard lock(messageMutex_);
+    statusLines_[index] = line;
+    messageDirty_ = true;
+    visible_.store(true);
+}
+
+void StatusOverlay::ClearStatusLine(size_t index) {
+    if (index >= kMaxStatusLines) return;
+
+    std::lock_guard lock(messageMutex_);
+    statusLines_[index].clear();
+
+    bool hasStatus = std::any_of(statusLines_.begin(), statusLines_.end(),
+                                 [](const std::string& line) { return !line.empty(); });
+    messageDirty_ = true;
+    visible_.store(hasStatus || !logLines_.empty());
 }
 
 // ── GetCompositionLayer ─────────────────────────────────────────────────────
@@ -327,7 +350,9 @@ const XrCompositionLayerQuad* StatusOverlay::GetCompositionLayer(XrSpace worldSp
     // Place debug console at eye height, 1.5m in front, facing the user.
     compositionLayer_.pose.orientation = {0.f, 0.f, 0.f, 1.f};
     compositionLayer_.pose.position   = {0.f, 1.2f, -1.5f};
-    compositionLayer_.size            = {0.9f, 0.45f};
+    const float overlayWidth = 1.2f;
+    compositionLayer_.size            = {overlayWidth, overlayWidth * (static_cast<float>(texHeight_) /
+                                                                       static_cast<float>(texWidth_))};
 
     XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     xrReleaseSwapchainImage(swapchain_, &releaseInfo);
@@ -411,19 +436,38 @@ void StatusOverlay::RenderTextToStaging() {
         rgba[i + 3] = 200;  // A
     }
 
-    std::deque<std::string> lines;
+    std::array<std::string, kMaxStatusLines> statusLines;
+    std::deque<std::string>                  logLines;
     {
         std::lock_guard lock(messageMutex_);
-        lines = logLines_;
+        statusLines = statusLines_;
+        logLines    = logLines_;
     }
 
     int charPixelW  = kGlyphW * kScale + kGlyphSpacing * kScale;
     int lineHeight  = kGlyphH * kScale + 4;  // 4px spacing between lines
     int margin      = 6;
+    size_t lineIdx  = 0;
 
-    for (size_t lineIdx = 0; lineIdx < lines.size(); ++lineIdx) {
-        const std::string& line = lines[lineIdx];
-        int y = margin + static_cast<int>(lineIdx) * lineHeight;
+    auto drawLine = [&](const std::string& line, uint8_t r, uint8_t g, uint8_t b) {
+        if (line.empty()) return;
+        int y = margin + static_cast<int>(lineIdx++) * lineHeight;
+        for (size_t ci = 0; ci < line.size(); ++ci) {
+            DrawGlyph(rgba, texWidth_, texHeight_,
+                      margin + static_cast<int>(ci) * charPixelW, y,
+                      line[ci], r, g, b);
+        }
+    };
+
+    for (const std::string& line : statusLines) {
+        drawLine(line, 120, 220, 255);
+    }
+
+    if (lineIdx > 0 && !logLines.empty()) {
+        ++lineIdx;
+    }
+
+    for (const std::string& line : logLines) {
 
         // Choose color: green for success, red for errors, yellow for warnings, white default
         uint8_t r = 200, g = 200, b = 200;
@@ -435,12 +479,7 @@ void StatusOverlay::RenderTextToStaging() {
         } else if (line.find("[WARN]") != std::string::npos || line.find("...") != std::string::npos) {
             r = 255; g = 200; b = 60;
         }
-
-        for (size_t ci = 0; ci < line.size(); ++ci) {
-            DrawGlyph(rgba, texWidth_, texHeight_,
-                      margin + static_cast<int>(ci) * charPixelW, y,
-                      line[ci], r, g, b);
-        }
+        drawLine(line, r, g, b);
     }
 }
 

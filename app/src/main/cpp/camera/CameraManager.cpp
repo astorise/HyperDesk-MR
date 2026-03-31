@@ -1,8 +1,11 @@
 #include "CameraManager.h"
+#include "../xr/StatusOverlay.h"
 #include "../util/Logger.h"
 
 #include <camera/NdkCameraMetadata.h>
 #include <media/NdkImage.h>
+
+#include <cstdio>
 
 // Quest passthrough cameras advertise 1280x960 and 1280x1280 YUV streams.
 // Stick to 1280x960 (4:3), which matches Meta's documented baseline mode.
@@ -31,12 +34,20 @@ bool CameraManager::Start() {
     cameraMgr_ = ACameraManager_create();
     if (!cameraMgr_) {
         LOGE("CameraManager: failed to create ACameraManager");
+        if (StatusOverlay::sInstance) {
+            StatusOverlay::sInstance->SetStatusLine(1, "cam: manager create failed");
+            StatusOverlay::sInstance->AddLog("[ERR] Camera manager create failed");
+        }
         return false;
     }
 
     std::string cameraId = FindCameraId();
     if (cameraId.empty()) {
         LOGE("CameraManager: no camera found");
+        if (StatusOverlay::sInstance) {
+            StatusOverlay::sInstance->SetStatusLine(1, "cam: no camera found");
+            StatusOverlay::sInstance->AddLog("[ERR] No camera found");
+        }
         return false;
     }
 
@@ -46,6 +57,9 @@ bool CameraManager::Start() {
 
     running_.store(true);
     LOGI("CameraManager: started");
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: started, waiting session");
+    }
     return true;
 }
 
@@ -86,9 +100,20 @@ void CameraManager::Stop() {
         cameraMgr_ = nullptr;
     }
     LOGI("CameraManager: stopped");
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: stopped");
+    }
 }
 
 std::string CameraManager::FindCameraId() {
+    struct CameraCandidate {
+        std::string id;
+        bool        isPassthrough = false;
+        uint8_t     position      = 255;
+        uint8_t     facing        = 255;
+        int32_t     orientation   = -1;
+    };
+
     ACameraIdList* cameraIds = nullptr;
     if (ACameraManager_getCameraIdList(cameraMgr_, &cameraIds) != ACAMERA_OK || !cameraIds) {
         LOGE("CameraManager: failed to enumerate cameras");
@@ -97,10 +122,10 @@ std::string CameraManager::FindCameraId() {
 
     LOGI("CameraManager: %d camera(s) found", cameraIds->numCameras);
 
-    std::string leftPassthroughId;
-    std::string anyPassthroughId;
-    std::string backFacingId;
-    std::string anyId;
+    CameraCandidate leftPassthrough;
+    CameraCandidate anyPassthrough;
+    CameraCandidate backFacing;
+    CameraCandidate anyCamera;
 
     for (int i = 0; i < cameraIds->numCameras; ++i) {
         const char* id = cameraIds->cameraIds[i];
@@ -141,21 +166,28 @@ std::string CameraManager::FindCameraId() {
         LOGI("CameraManager: camera '%s' facing=%u orientation=%d passthrough=%d position=%u",
              id, facing, orientation, isPassthrough ? 1 : 0, position);
 
+        CameraCandidate candidate;
+        candidate.id            = id;
+        candidate.isPassthrough = isPassthrough;
+        candidate.position      = position;
+        candidate.facing        = facing;
+        candidate.orientation   = orientation;
+
         if (isPassthrough) {
-            if (anyPassthroughId.empty()) {
-                anyPassthroughId = id;
+            if (anyPassthrough.id.empty()) {
+                anyPassthrough = candidate;
             }
             // Meta docs define position 0 as the leftmost passthrough camera.
-            if (position == 0 && leftPassthroughId.empty()) {
-                leftPassthroughId = id;
+            if (position == 0 && leftPassthrough.id.empty()) {
+                leftPassthrough = candidate;
             }
         }
 
-        if (facing == ACAMERA_LENS_FACING_BACK && backFacingId.empty()) {
-            backFacingId = id;
+        if (facing == ACAMERA_LENS_FACING_BACK && backFacing.id.empty()) {
+            backFacing = candidate;
         }
-        if (anyId.empty()) {
-            anyId = id;
+        if (anyCamera.id.empty()) {
+            anyCamera = candidate;
         }
 
         ACameraMetadata_free(metadata);
@@ -163,12 +195,25 @@ std::string CameraManager::FindCameraId() {
 
     ACameraManager_deleteCameraIdList(cameraIds);
 
-    std::string result = !leftPassthroughId.empty() ? leftPassthroughId
-                       : !anyPassthroughId.empty()  ? anyPassthroughId
-                       : !backFacingId.empty()      ? backFacingId
-                       : anyId;
-    LOGI("CameraManager: using camera '%s'", result.c_str());
-    return result;
+    CameraCandidate result = !leftPassthrough.id.empty() ? leftPassthrough
+                           : !anyPassthrough.id.empty()  ? anyPassthrough
+                           : !backFacing.id.empty()      ? backFacing
+                           : anyCamera;
+    LOGI("CameraManager: using camera '%s'", result.id.c_str());
+
+    if (StatusOverlay::sInstance) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "cam: id=%s pass=%d pos=%u face=%u",
+                 result.id.c_str(), result.isPassthrough ? 1 : 0,
+                 result.position, result.facing);
+        StatusOverlay::sInstance->SetStatusLine(1, buf);
+
+        snprintf(buf, sizeof(buf), "cam: req=%dx%d yuv420 max=%d",
+                 kImageWidth, kImageHeight, kMaxImages);
+        StatusOverlay::sInstance->SetStatusLine(2, buf);
+    }
+
+    return result.id;
 }
 
 bool CameraManager::CreateImageReader() {
@@ -177,6 +222,12 @@ bool CameraManager::CreateImageReader() {
                                               kMaxImages, &imageReader_);
     if (status != AMEDIA_OK || !imageReader_) {
         LOGE("CameraManager: AImageReader_new failed: %d", status);
+        if (StatusOverlay::sInstance) {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "cam: reader create failed (%d)", status);
+            StatusOverlay::sInstance->SetStatusLine(2, buf);
+            StatusOverlay::sInstance->AddLog("[ERR] Camera reader create failed");
+        }
         return false;
     }
 
@@ -195,7 +246,19 @@ bool CameraManager::OpenCamera(const std::string& cameraId) {
                                                         &deviceCb, &cameraDevice_);
     if (status != ACAMERA_OK || !cameraDevice_) {
         LOGE("CameraManager: openCamera failed: %d", status);
+        if (StatusOverlay::sInstance) {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "cam: open failed (%d) id=%s", status, cameraId.c_str());
+            StatusOverlay::sInstance->SetStatusLine(2, buf);
+            StatusOverlay::sInstance->AddLog("[ERR] Camera open failed");
+        }
         return false;
+    }
+
+    if (StatusOverlay::sInstance) {
+        char buf[96];
+        snprintf(buf, sizeof(buf), "cam: open ok id=%s", cameraId.c_str());
+        StatusOverlay::sInstance->SetStatusLine(2, buf);
     }
     return true;
 }
@@ -223,6 +286,12 @@ bool CameraManager::CreateCaptureSession() {
         cameraDevice_, outputContainer_, &sessionCb, &captureSession_);
     if (status != ACAMERA_OK) {
         LOGE("CameraManager: createCaptureSession failed: %d", status);
+        if (StatusOverlay::sInstance) {
+            char buf[96];
+            snprintf(buf, sizeof(buf), "cam: session create failed (%d)", status);
+            StatusOverlay::sInstance->SetStatusLine(2, buf);
+            StatusOverlay::sInstance->AddLog("[ERR] Camera session create failed");
+        }
         return false;
     }
 
@@ -230,6 +299,9 @@ bool CameraManager::CreateCaptureSession() {
     ACaptureRequest_addTarget(captureRequest_, outputTarget_);
     ACameraCaptureSession_setRepeatingRequest(captureSession_, nullptr, 1,
                                                &captureRequest_, nullptr);
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: repeating request active");
+    }
     return true;
 }
 
@@ -239,24 +311,44 @@ void CameraManager::OnDeviceDisconnected(void* context, ACameraDevice*) {
     LOGW("CameraManager: device disconnected");
     auto* self = static_cast<CameraManager*>(context);
     self->running_.store(false);
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: device disconnected");
+        StatusOverlay::sInstance->AddLog("[ERR] Camera disconnected");
+    }
 }
 
 void CameraManager::OnDeviceError(void* context, ACameraDevice*, int error) {
     LOGE("CameraManager: device error %d", error);
     auto* self = static_cast<CameraManager*>(context);
     self->running_.store(false);
+    if (StatusOverlay::sInstance) {
+        char buf[96];
+        snprintf(buf, sizeof(buf), "cam: device error=%d", error);
+        StatusOverlay::sInstance->SetStatusLine(2, buf);
+        StatusOverlay::sInstance->AddLog("[ERR] Camera device error");
+    }
 }
 
 void CameraManager::OnSessionClosed(void*, ACameraCaptureSession*) {
     LOGI("CameraManager: session closed");
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: session closed");
+    }
 }
 
 void CameraManager::OnSessionReady(void*, ACameraCaptureSession*) {
     LOGI("CameraManager: session ready");
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: session ready");
+    }
 }
 
 void CameraManager::OnSessionActive(void*, ACameraCaptureSession*) {
     LOGI("CameraManager: session active");
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: session active");
+        StatusOverlay::sInstance->AddLog("[OK] Camera session active");
+    }
 }
 
 void CameraManager::OnImageAvailable(void* context, AImageReader* reader) {
@@ -292,6 +384,12 @@ void CameraManager::OnImageAvailable(void* context, AImageReader* reader) {
             int lumAvg = sampleCount > 0 ? static_cast<int>(lumSum / sampleCount) : 0;
             LOGI("CameraManager: frame #%d %dx%d rowStride=%d pixelStride=%d lumAvg=%d len=%d",
                  frameCount, width, height, rowStride, pixelStride, lumAvg, yLen);
+            if (StatusOverlay::sInstance) {
+                char buf[128];
+                snprintf(buf, sizeof(buf), "frm: #%d %dx%d rs=%d ps=%d lum=%d",
+                         frameCount, width, height, rowStride, pixelStride, lumAvg);
+                StatusOverlay::sInstance->SetStatusLine(3, buf);
+            }
         }
 
         std::lock_guard lock(self->callbackMutex_);

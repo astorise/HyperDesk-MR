@@ -124,8 +124,9 @@ void android_main(android_app* app) {
         state.monitorPtrs);
 
     // ── Status overlay (debug console between passthrough and monitors) ───
-    state.statusOverlay = std::make_unique<StatusOverlay>(*state.xrContext, 640, 320);
+    state.statusOverlay = std::make_unique<StatusOverlay>(*state.xrContext, 1024, 512);
     state.statusOverlay->AddLog("HyperDesk MR ready");
+    state.statusOverlay->SetStatusLine(0, "scan: booting");
     state.compositor->SetStatusOverlay(state.statusOverlay.get());
 
     // RDP error callback — show error text in the status overlay.

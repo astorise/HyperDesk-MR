@@ -1,9 +1,11 @@
 #include "QrScanner.h"
+#include "../xr/StatusOverlay.h"
 #include "../util/Logger.h"
 
 #include <ReadBarcode.h>
 #include <ImageView.h>
 
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 
@@ -62,7 +64,15 @@ static int ExtractJsonInt(const std::string& json, const std::string& key, int d
 // ── QrScanner ────────────────────────────────────────────────────────────────
 
 QrScanner::QrScanner(ANativeActivity* activity)
-    : camera_(std::make_unique<CameraManager>(activity)) {}
+    : camera_(std::make_unique<CameraManager>(activity)) {
+    if (activity) {
+        if (activity->externalDataPath) {
+            debugSnapshotPath_ = std::string(activity->externalDataPath) + "/qr-debug-latest.pgm";
+        } else if (activity->internalDataPath) {
+            debugSnapshotPath_ = std::string(activity->internalDataPath) + "/qr-debug-latest.pgm";
+        }
+    }
+}
 
 QrScanner::~QrScanner() {
     Stop();
@@ -75,22 +85,46 @@ void QrScanner::SetConnectCallback(ConnectCallback cb) {
 
 bool QrScanner::Start() {
     hasResult_.store(false);
+    frameCount_    = 0;
+    decodeMisses_  = 0;
+    snapshotSaved_ = false;
 
     camera_->SetFrameCallback([this](const uint8_t* data, int32_t w, int32_t h, int32_t stride) {
         OnFrame(data, w, h, stride);
     });
 
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(0, "scan: starting");
+        StatusOverlay::sInstance->SetStatusLine(4, "qr: waiting for frames");
+        if (!debugSnapshotPath_.empty()) {
+            StatusOverlay::sInstance->SetStatusLine(5, "snap: pending qr-debug-latest.pgm");
+        } else {
+            StatusOverlay::sInstance->SetStatusLine(5, "snap: path unavailable");
+        }
+    }
+
     if (!camera_->Start()) {
         LOGE("QrScanner: camera start failed");
+        if (StatusOverlay::sInstance) {
+            StatusOverlay::sInstance->SetStatusLine(0, "scan: camera start failed");
+            StatusOverlay::sInstance->AddLog("[ERR] QR scanner camera start failed");
+        }
         return false;
     }
 
     LOGI("Scanner initialized");
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(0, "scan: running");
+        StatusOverlay::sInstance->AddLog("[OK] QR scanner running");
+    }
     return true;
 }
 
 void QrScanner::Stop() {
     camera_->Stop();
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(0, hasResult_.load() ? "scan: completed" : "scan: stopped");
+    }
 }
 
 bool QrScanner::IsRunning() const {
@@ -98,25 +132,86 @@ bool QrScanner::IsRunning() const {
 }
 
 void QrScanner::OnFrame(const uint8_t* data, int32_t width, int32_t height, int32_t rowStride) {
+    {
+        std::lock_guard lock(frameMutex_);
+        lastWidth_     = width;
+        lastHeight_    = height;
+        lastRowStride_ = rowStride;
+        lastFrame_.assign(data, data + rowStride * height);
+    }
+
+    ++frameCount_;
     if (hasResult_.load()) return;
 
     std::string decoded = DecodeQr(data, width, height, rowStride);
-    if (decoded.empty()) return;
+    if (decoded.empty()) {
+        ++decodeMisses_;
+
+        if (StatusOverlay::sInstance && frameCount_ % 120 == 0) {
+            char buf[128];
+            snprintf(buf, sizeof(buf), "qr: frames=%llu miss=%llu last=empty",
+                     static_cast<unsigned long long>(frameCount_),
+                     static_cast<unsigned long long>(decodeMisses_));
+            StatusOverlay::sInstance->SetStatusLine(4, buf);
+        }
+
+        if (!snapshotSaved_ && !debugSnapshotPath_.empty() && frameCount_ >= 240 &&
+            SaveSnapshot(debugSnapshotPath_)) {
+            snapshotSaved_ = true;
+            if (StatusOverlay::sInstance) {
+                StatusOverlay::sInstance->SetStatusLine(5, "snap: saved qr-debug-latest.pgm");
+                StatusOverlay::sInstance->AddLog("[WARN] QR snapshot saved for debug");
+            }
+        }
+        return;
+    }
 
     LOGI("QR Found: %s", decoded.c_str());
+    if (StatusOverlay::sInstance) {
+        char buf[128];
+        snprintf(buf, sizeof(buf), "qr: found len=%u after %llu frames",
+                 static_cast<unsigned>(decoded.size()),
+                 static_cast<unsigned long long>(frameCount_));
+        StatusOverlay::sInstance->SetStatusLine(4, buf);
+        StatusOverlay::sInstance->AddLog("[OK] QR payload decoded");
+    }
 
     RdpConnectionManager::ConnectionParams params;
     if (!ParseConnectionParams(decoded, params)) {
         LOGW("QrScanner: invalid JSON in QR code");
+        if (StatusOverlay::sInstance) {
+            StatusOverlay::sInstance->SetStatusLine(0, "scan: decoded invalid JSON");
+            StatusOverlay::sInstance->AddLog("[ERR] QR JSON parse failed");
+        }
         return;
     }
 
     hasResult_.store(true);
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(0, "scan: decoded valid QR");
+    }
 
     std::lock_guard lock(cbMutex_);
     if (connectCallback_) {
         connectCallback_(params);
     }
+}
+
+bool QrScanner::SaveSnapshot(const std::string& path) {
+    std::lock_guard lock(frameMutex_);
+    if (lastFrame_.empty()) return false;
+
+    FILE* f = fopen(path.c_str(), "wb");
+    if (!f) return false;
+
+    fprintf(f, "P5\n%d %d\n255\n", lastWidth_, lastHeight_);
+    for (int32_t y = 0; y < lastHeight_; ++y) {
+        fwrite(lastFrame_.data() + y * lastRowStride_, 1, lastWidth_, f);
+    }
+    fclose(f);
+
+    LOGI("QrScanner: snapshot saved to %s (%dx%d)", path.c_str(), lastWidth_, lastHeight_);
+    return true;
 }
 
 std::string QrScanner::DecodeQr(const uint8_t* data, int32_t width, int32_t height,

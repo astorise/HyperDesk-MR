@@ -6,6 +6,7 @@
 #include <openxr/openxr_platform.h>
 
 #include <atomic>
+#include <array>
 #include <cstdint>
 #include <deque>
 #include <mutex>
@@ -33,6 +34,10 @@ public:
     // The overlay keeps the last kMaxLogLines and stays visible.
     void AddLog(const std::string& line);
 
+    // Replace one persistent status line rendered above the log buffer.
+    void SetStatusLine(size_t index, const std::string& line);
+    void ClearStatusLine(size_t index);
+
     // Returns the composition layer for this frame, or nullptr if hidden.
     // Called from the render loop thread.
     const XrCompositionLayerQuad* GetCompositionLayer(XrSpace worldSpace);
@@ -43,7 +48,8 @@ public:
     static StatusOverlay* sInstance;
 
 private:
-    static constexpr int kMaxLogLines = 14;
+    static constexpr size_t kMaxStatusLines = 6;
+    static constexpr int    kMaxLogLines    = 12;
 
     XrContext&   ctx_;
     uint32_t     texWidth_;
@@ -61,6 +67,7 @@ private:
     std::vector<VkImage> swapchainImages_;
 
     std::mutex              messageMutex_;
+    std::array<std::string, kMaxStatusLines> statusLines_{};
     std::deque<std::string> logLines_;
     bool                    messageDirty_ = false;
     std::atomic<bool>       visible_{false};
