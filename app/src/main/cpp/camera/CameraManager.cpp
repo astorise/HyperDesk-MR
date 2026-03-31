@@ -1,11 +1,18 @@
 #include "CameraManager.h"
 #include "../util/Logger.h"
 
+#include <camera/NdkCameraMetadata.h>
 #include <media/NdkImage.h>
 
-static constexpr int32_t kImageWidth  = 640;
-static constexpr int32_t kImageHeight = 480;
+// Quest passthrough cameras advertise 1280x960 and 1280x1280 YUV streams.
+// Stick to 1280x960 (4:3), which matches Meta's documented baseline mode.
+static constexpr int32_t kImageWidth  = 1280;
+static constexpr int32_t kImageHeight = 960;
 static constexpr int32_t kMaxImages   = 2;
+
+// Meta passthrough camera vendor tags.
+static constexpr uint32_t kMetaCameraSourceTag   = 0x80004d00;
+static constexpr uint32_t kMetaCameraPositionTag = 0x80004d01;
 
 CameraManager::CameraManager(ANativeActivity* /*activity*/) {}
 
@@ -88,32 +95,78 @@ std::string CameraManager::FindCameraId() {
         return {};
     }
 
-    std::string result;
+    LOGI("CameraManager: %d camera(s) found", cameraIds->numCameras);
+
+    std::string leftPassthroughId;
+    std::string anyPassthroughId;
+    std::string backFacingId;
+    std::string anyId;
+
     for (int i = 0; i < cameraIds->numCameras; ++i) {
+        const char* id = cameraIds->cameraIds[i];
         ACameraMetadata* metadata = nullptr;
-        if (ACameraManager_getCameraCharacteristics(cameraMgr_, cameraIds->cameraIds[i],
-                                                     &metadata) != ACAMERA_OK) {
+        if (ACameraManager_getCameraCharacteristics(cameraMgr_, id, &metadata) != ACAMERA_OK) {
             continue;
         }
 
+        bool isPassthrough = false;
+        uint8_t position = 255;
+
+        ACameraMetadata_const_entry sourceEntry{};
+        if (ACameraMetadata_getConstEntry(metadata, kMetaCameraSourceTag, &sourceEntry) == ACAMERA_OK &&
+            sourceEntry.count > 0) {
+            isPassthrough = (sourceEntry.data.u8[0] == 0);
+        }
+
+        ACameraMetadata_const_entry positionEntry{};
+        if (ACameraMetadata_getConstEntry(metadata, kMetaCameraPositionTag, &positionEntry) == ACAMERA_OK &&
+            positionEntry.count > 0) {
+            position = positionEntry.data.u8[0];
+        }
+
         ACameraMetadata_const_entry lensFacing{};
+        uint8_t facing = 255;
         if (ACameraMetadata_getConstEntry(metadata, ACAMERA_LENS_FACING, &lensFacing) == ACAMERA_OK
             && lensFacing.count > 0) {
-            // Prefer back-facing camera for QR scanning
-            if (lensFacing.data.u8[0] == ACAMERA_LENS_FACING_BACK) {
-                result = cameraIds->cameraIds[i];
-                ACameraMetadata_free(metadata);
-                break;
+            facing = lensFacing.data.u8[0];
+        }
+
+        ACameraMetadata_const_entry orientationEntry{};
+        int32_t orientation = -1;
+        if (ACameraMetadata_getConstEntry(metadata, ACAMERA_SENSOR_ORIENTATION, &orientationEntry) == ACAMERA_OK
+            && orientationEntry.count > 0) {
+            orientation = orientationEntry.data.i32[0];
+        }
+
+        LOGI("CameraManager: camera '%s' facing=%u orientation=%d passthrough=%d position=%u",
+             id, facing, orientation, isPassthrough ? 1 : 0, position);
+
+        if (isPassthrough) {
+            if (anyPassthroughId.empty()) {
+                anyPassthroughId = id;
             }
-            // Fall back to any camera
-            if (result.empty()) {
-                result = cameraIds->cameraIds[i];
+            // Meta docs define position 0 as the leftmost passthrough camera.
+            if (position == 0 && leftPassthroughId.empty()) {
+                leftPassthroughId = id;
             }
         }
+
+        if (facing == ACAMERA_LENS_FACING_BACK && backFacingId.empty()) {
+            backFacingId = id;
+        }
+        if (anyId.empty()) {
+            anyId = id;
+        }
+
         ACameraMetadata_free(metadata);
     }
 
     ACameraManager_deleteCameraIdList(cameraIds);
+
+    std::string result = !leftPassthroughId.empty() ? leftPassthroughId
+                       : !anyPassthroughId.empty()  ? anyPassthroughId
+                       : !backFacingId.empty()      ? backFacingId
+                       : anyId;
     LOGI("CameraManager: using camera '%s'", result.c_str());
     return result;
 }
@@ -219,10 +272,27 @@ void CameraManager::OnImageAvailable(void* context, AImageReader* reader) {
     uint8_t* yData = nullptr;
     int yLen = 0;
     if (AImage_getPlaneData(image, 0, &yData, &yLen) == AMEDIA_OK && yData) {
-        int32_t width = 0, height = 0, rowStride = 0;
+        int32_t width = 0, height = 0, rowStride = 0, pixelStride = 0;
         AImage_getWidth(image, &width);
         AImage_getHeight(image, &height);
         AImage_getPlaneRowStride(image, 0, &rowStride);
+        AImage_getPlanePixelStride(image, 0, &pixelStride);
+
+        static int frameCount = 0;
+        if (frameCount++ % 120 == 0) {
+            uint64_t lumSum = 0;
+            int sampleCount = 0;
+            for (int y = 0; y < height; y += 16) {
+                const uint8_t* row = yData + y * rowStride;
+                for (int x = 0; x < width; x += 16) {
+                    lumSum += row[x];
+                    ++sampleCount;
+                }
+            }
+            int lumAvg = sampleCount > 0 ? static_cast<int>(lumSum / sampleCount) : 0;
+            LOGI("CameraManager: frame #%d %dx%d rowStride=%d pixelStride=%d lumAvg=%d len=%d",
+                 frameCount, width, height, rowStride, pixelStride, lumAvg, yLen);
+        }
 
         std::lock_guard lock(self->callbackMutex_);
         if (self->frameCallback_) {
