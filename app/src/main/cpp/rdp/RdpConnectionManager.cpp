@@ -5,6 +5,7 @@
 #include "../xr/StatusOverlay.h"
 
 #include <freerdp/channels/channels.h>
+#include <freerdp/gdi/gdi.h>
 #include <winpr/synch.h>
 
 #include <algorithm>
@@ -175,13 +176,28 @@ void RdpConnectionManager::Disconnect() {
 
 // ── Static callbacks ──────────────────────────────────────────────────────────
 
-BOOL RdpConnectionManager::OnPreConnect(freerdp* /*instance*/) {
+static BOOL OnBeginPaint(rdpContext* /*context*/) { return TRUE; }
+static BOOL OnEndPaint(rdpContext* /*context*/)   { return TRUE; }
+
+BOOL RdpConnectionManager::OnPreConnect(freerdp* instance) {
     ScreenLog("[OK] TLS handshake...");
+    // FreeRDP requires update callbacks even when using the GFX pipeline.
+    rdpUpdate* update = instance->context->update;
+    update->BeginPaint = OnBeginPaint;
+    update->EndPaint   = OnEndPaint;
     return TRUE;
 }
 
-BOOL RdpConnectionManager::OnPostConnect(freerdp* /*instance*/) {
-    ScreenLog("[OK] RDP session established");
+BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
+    ScreenLog("[OK] RDP session established — initializing GDI...");
+    // gdi_init() is required for FreeRDP's internal plumbing even when
+    // graphics arrive via RDPGFX.  SoftwareGdi stays FALSE (default) so
+    // no huge framebuffer is allocated — keeps memory free for the camera.
+    if (!gdi_init(instance, PIXEL_FORMAT_BGRA32)) {
+        ScreenLog("[ERR] gdi_init() failed");
+        return FALSE;
+    }
+    ScreenLog("[OK] GDI initialized");
     return TRUE;
 }
 
