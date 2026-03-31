@@ -125,8 +125,7 @@ std::string QrScanner::DecodeQr(const uint8_t* data, int32_t width, int32_t heig
 
     ZXing::ReaderOptions opts;
     opts.setFormats(ZXing::BarcodeFormat::QRCode);
-    opts.setTryHarder(true);
-    opts.setTryRotate(true);
+    opts.setTryHarder(false);  // Speed over accuracy — we're scanning every frame
 
     auto result = ZXing::ReadBarcode(image, opts);
     if (result.isValid()) {
