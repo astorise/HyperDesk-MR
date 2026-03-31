@@ -21,6 +21,10 @@ VirtualMonitor::~VirtualMonitor() = default;
 // Task 3: Initialize AMediaCodec for "video/avc" inside VirtualMonitor.
 // Task 6: Enable async callbacks before Configure().
 bool VirtualMonitor::InitCodec() {
+    if (decoder_ && bridge_) {
+        return true;
+    }
+
     // Task 4 — AImageReader with GPU-sampling usage (inside CodecSurfaceBridge).
     bridge_ = std::make_unique<CodecSurfaceBridge>(width_, height_, monitorIndex_);
 

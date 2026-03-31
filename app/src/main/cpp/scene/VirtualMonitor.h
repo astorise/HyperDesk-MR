@@ -32,10 +32,11 @@ public:
     VirtualMonitor(uint32_t monitorIndex, uint32_t width, uint32_t height);
     ~VirtualMonitor();
 
-    // Phase 1: create AImageReader + AMediaCodec.  Call before InitXr().
+    // Create AImageReader + AMediaCodec for the H.264 decode path.
+    // Safe to call lazily after InitXr(); subsequent calls are no-ops.
     bool InitCodec();
 
-    // Phase 2: create the OpenXR swapchain.  Call after XrSession is ready.
+    // Create the OpenXR swapchain once the XrSession is ready.
     bool InitXr(XrContext& ctx);
 
     // Feed one compressed H.264 NAL unit.  Thread-safe; non-blocking.

@@ -44,6 +44,7 @@ struct AppState {
 
     bool running       = true;
     bool sessionActive = false;
+    bool codecsReady   = false;
 };
 
 // ── Android lifecycle callback ────────────────────────────────────────────────
@@ -100,11 +101,9 @@ void android_main(android_app* app) {
     state.frustumCuller = std::make_unique<FrustumCuller>();
 
     // ── Initialise VirtualMonitor objects ────────────────────────────────────
-    // Phase 1: codec + surface bridge (no XrSession dependency).
+    // Delay codec allocation until after QR scanning to reduce camera pressure.
     for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
         state.monitors[i] = std::make_unique<VirtualMonitor>(i, 1920, 1080);
-        state.monitors[i]->InitCodec();
-        // Phase 2: OpenXR swapchain (requires XrSession created above).
         state.monitors[i]->InitXr(*state.xrContext);
         state.monitorPtrs[i] = state.monitors[i].get();
     }
@@ -154,9 +153,25 @@ void android_main(android_app* app) {
             snprintf(buf, sizeof(buf), "  user=%s domain=%s",
                      params.username.c_str(), params.domain.c_str());
             state.statusOverlay->AddLog(buf);
+            state.statusOverlay->AddLog("Stopping camera...");
+            state.qrScanner->Stop();
+
+            if (!state.codecsReady) {
+                state.statusOverlay->AddLog("Initializing video decoders...");
+                for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
+                    if (!state.monitors[i]->InitCodec()) {
+                        LOGE("VirtualMonitor[%u]: InitCodec failed", i);
+                        snprintf(buf, sizeof(buf), "[ERR] Decoder init failed on monitor %u", i);
+                        state.statusOverlay->AddLog(buf);
+                        return;
+                    }
+                }
+                state.codecsReady = true;
+                state.statusOverlay->AddLog("[OK] Video decoders ready");
+            }
+
             state.statusOverlay->AddLog("Connecting...");
             state.rdpManager->Connect(params);
-            state.qrScanner->Stop();
         });
     if (state.qrScanner->Start()) {
         LOGI("QR scanner active — point headset at a QR code to connect");
