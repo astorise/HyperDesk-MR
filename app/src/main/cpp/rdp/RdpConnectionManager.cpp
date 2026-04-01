@@ -217,13 +217,15 @@ RdpConnectionManager* RdpConnectionManager::GetSelfFromGfx(RdpgfxClientContext* 
 
 static BOOL OnBeginPaint(rdpContext* /*context*/) { return TRUE; }
 static BOOL OnEndPaint(rdpContext* /*context*/)   { return TRUE; }
+static BOOL OnDesktopResize(rdpContext* /*context*/) { return TRUE; }
 
 BOOL RdpConnectionManager::OnPreConnect(freerdp* instance) {
     ScreenLog("[OK] TLS handshake...");
     // FreeRDP requires update callbacks even when using the GFX pipeline.
     rdpUpdate* update = instance->context->update;
-    update->BeginPaint = OnBeginPaint;
-    update->EndPaint   = OnEndPaint;
+    update->BeginPaint    = OnBeginPaint;
+    update->EndPaint      = OnEndPaint;
+    update->DesktopResize = OnDesktopResize;
     return TRUE;
 }
 
