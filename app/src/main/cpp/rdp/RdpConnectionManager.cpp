@@ -195,7 +195,10 @@ void RdpConnectionManager::Disconnect() {
     }
     prevCreateSurface_ = nullptr;
     prevDeleteSurface_ = nullptr;
+    prevCapsAdvertise_ = nullptr;
     prevResetGraphics_ = nullptr;
+    prevStartFrame_ = nullptr;
+    prevEndFrame_ = nullptr;
     prevMapSurfaceToOutput_ = nullptr;
     prevMapSurfaceToScaledOutput_ = nullptr;
 }
@@ -271,9 +274,12 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
             if (!ctx->gfx->custom && rdpCtx->gdi) {
                 ctx->gfx->custom = rdpCtx->gdi;
             }
+            self->prevCapsAdvertise_ = ctx->gfx->CapsAdvertise;
             self->prevResetGraphics_ = ctx->gfx->ResetGraphics;
             self->prevCreateSurface_ = ctx->gfx->CreateSurface;
             self->prevDeleteSurface_ = ctx->gfx->DeleteSurface;
+            self->prevStartFrame_ = ctx->gfx->StartFrame;
+            self->prevEndFrame_ = ctx->gfx->EndFrame;
             self->prevMapSurfaceToOutput_ = ctx->gfx->MapSurfaceToOutput;
             self->prevMapSurfaceToScaledOutput_ = ctx->gfx->MapSurfaceToScaledOutput;
 
@@ -302,10 +308,19 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
 
 // Task 6: CapsAdvertise — log what's being advertised; H.264 is already requested
 // via FreeRDP_GfxH264 / FreeRDP_SupportGraphicsPipeline settings.
-UINT RdpConnectionManager::OnGfxCapsAdvertise(RdpgfxClientContext* /*gfx*/,
+UINT RdpConnectionManager::OnGfxCapsAdvertise(RdpgfxClientContext* gfx,
                                                const RDPGFX_CAPS_ADVERTISE_PDU* caps) {
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !caps) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
     LOGI("RDP: GFX CapsAdvertise — advertising %u capability set(s) including H.264/AVC",
          caps ? caps->capsSetCount : 0u);
+
+    if (self->prevCapsAdvertise_) {
+        return self->prevCapsAdvertise_(gfx, caps);
+    }
     return CHANNEL_RC_OK;
 }
 
@@ -432,8 +447,16 @@ UINT RdpConnectionManager::OnGfxResetGraphics(RdpgfxClientContext* gfx,
     return CHANNEL_RC_OK;
 }
 
-UINT RdpConnectionManager::OnGfxStartFrame(RdpgfxClientContext* /*gfx*/,
-                                            const RDPGFX_START_FRAME_PDU* /*pdu*/) {
+UINT RdpConnectionManager::OnGfxStartFrame(RdpgfxClientContext* gfx,
+                                            const RDPGFX_START_FRAME_PDU* pdu) {
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !pdu) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    if (self->prevStartFrame_) {
+        return self->prevStartFrame_(gfx, pdu);
+    }
     return CHANNEL_RC_OK;
 }
 
@@ -471,8 +494,16 @@ UINT RdpConnectionManager::OnGfxSurfaceToScaledOutput(
     return CHANNEL_RC_OK;
 }
 
-UINT RdpConnectionManager::OnGfxEndFrame(RdpgfxClientContext* /*gfx*/,
-                                          const RDPGFX_END_FRAME_PDU* /*pdu*/) {
+UINT RdpConnectionManager::OnGfxEndFrame(RdpgfxClientContext* gfx,
+                                          const RDPGFX_END_FRAME_PDU* pdu) {
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !pdu) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    if (self->prevEndFrame_) {
+        return self->prevEndFrame_(gfx, pdu);
+    }
     return CHANNEL_RC_OK;
 }
 

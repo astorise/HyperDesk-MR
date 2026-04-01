@@ -118,16 +118,25 @@ private:
         UINT (*)(RdpgfxClientContext*, const RDPGFX_CREATE_SURFACE_PDU*);
     using GfxDeleteSurfaceCallback =
         UINT (*)(RdpgfxClientContext*, const RDPGFX_DELETE_SURFACE_PDU*);
+    using GfxCapsAdvertiseCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_CAPS_ADVERTISE_PDU*);
     using GfxResetGraphicsCallback =
         UINT (*)(RdpgfxClientContext*, const RDPGFX_RESET_GRAPHICS_PDU*);
+    using GfxStartFrameCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_START_FRAME_PDU*);
+    using GfxEndFrameCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_END_FRAME_PDU*);
     using GfxMapSurfaceToOutputCallback =
         UINT (*)(RdpgfxClientContext*, const RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU*);
     using GfxMapSurfaceToScaledOutputCallback =
         UINT (*)(RdpgfxClientContext*, const RDPGFX_MAP_SURFACE_TO_SCALED_OUTPUT_PDU*);
 
+    GfxCapsAdvertiseCallback         prevCapsAdvertise_ = nullptr;
     GfxCreateSurfaceCallback          prevCreateSurface_ = nullptr;
     GfxDeleteSurfaceCallback          prevDeleteSurface_ = nullptr;
     GfxResetGraphicsCallback          prevResetGraphics_ = nullptr;
+    GfxStartFrameCallback             prevStartFrame_ = nullptr;
+    GfxEndFrameCallback               prevEndFrame_ = nullptr;
     GfxMapSurfaceToOutputCallback     prevMapSurfaceToOutput_ = nullptr;
     GfxMapSurfaceToScaledOutputCallback prevMapSurfaceToScaledOutput_ = nullptr;
 };
