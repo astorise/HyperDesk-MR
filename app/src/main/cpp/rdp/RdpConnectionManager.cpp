@@ -111,9 +111,14 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_string(settings, FreeRDP_Domain,         params.domain.c_str());
 
     // Enable H.264 graphics pipeline.
-    freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline, TRUE);
-    freerdp_settings_set_bool(settings, FreeRDP_GfxH264,                 TRUE);
-    freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444,               FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_SupportDynamicChannels,      TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_SupportGraphicsPipeline,     TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_SupportDisplayControl,       TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate,     TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_SurfaceCommandsEnabled,      TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_SupportMonitorLayoutPdu,     TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxH264,                     TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444,                   FALSE);
 
     // Disable NLA — OpenSSL on Android lacks the LEGACY provider (MD4)
     // which NTLM password hashing requires.  Fall back to TLS security.
@@ -335,10 +340,8 @@ UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
     }
 
     if (cmd->codecId != RDPGFX_CODECID_AVC420) {
-        if (cmd->codecId == RDPGFX_CODECID_AVC444 ||
-            cmd->codecId == RDPGFX_CODECID_AVC444v2) {
-            ScreenLog("[WARN] AVC444 stream unsupported on Quest path");
-        }
+        ScreenLog("[WARN] Unsupported GFX codec=%u surface=%u bytes=%u",
+                  cmd->codecId, cmd->surfaceId, cmd->length);
         return CHANNEL_RC_OK;
     }
 
@@ -442,6 +445,13 @@ UINT RdpConnectionManager::OnGfxResetGraphics(RdpgfxClientContext* gfx,
 
     ScreenLog("[OK] ResetGraphics %ux%u monitors=%u",
               pdu->width, pdu->height, pdu->monitorCount);
+
+    if (!self->context_ || !self->context_->disp) {
+        const uint32_t fallbackCount =
+            std::max<uint32_t>(1u, std::min<uint32_t>(pdu->monitorCount, self->monitorCount_));
+        ScreenLog("[WARN] disp channel missing, fallback=%u monitor(s)", fallbackCount);
+        self->displayControl_.ActivateMonitorCount(fallbackCount);
+    }
 
     if (self->prevResetGraphics_) {
         return self->prevResetGraphics_(gfx, pdu);

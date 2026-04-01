@@ -41,6 +41,9 @@ public:
     // Called by RdpDisplayControl when the server assigns a GFX surface ID.
     void BindSurface(uint32_t monitorIndex, uint32_t rdpSurfaceId);
 
+    // Mark the first N monitors as active and the rest inactive.
+    void SetActiveCount(uint32_t count);
+
     // Mark all monitors as active (called after layout PDU is sent).
     void SetAllActive();
 

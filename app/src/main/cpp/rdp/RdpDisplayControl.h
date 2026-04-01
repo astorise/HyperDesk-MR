@@ -18,9 +18,11 @@ public:
     // Called once the DispClientContext is available (from OnChannelsConnected).
     void Attach(DispClientContext* ctx);
 
-    // Sends the 16-monitor layout PDU to the server.
-    // Called automatically from OnDisplayControlCaps when MaxNumMonitors >= 16.
-    UINT SendMonitorLayout();
+    // Sends up to monitorCount monitors to the server.
+    UINT SendMonitorLayout(uint32_t monitorCount);
+
+    // Fallback used when the server exposes fewer monitors or no disp channel.
+    void ActivateMonitorCount(uint32_t monitorCount);
 
     // ── FreeRDP C-style callback ───────────────────────────────────────────────
     // Registered on the DispClientContext.  FreeRDP passes the context pointer;
@@ -35,5 +37,5 @@ private:
     DispClientContext* ctx_         = nullptr;
     uint32_t           maxMonitors_ = 0;
 
-    std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> BuildLayoutPDU() const;
+    std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> BuildLayoutPDU(uint32_t monitorCount) const;
 };

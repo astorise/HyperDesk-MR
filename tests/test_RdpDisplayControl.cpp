@@ -47,17 +47,17 @@ protected:
 // ── SendMonitorLayout ─────────────────────────────────────────────────────────
 
 TEST_F(RdpDisplayControlTest, SendsExactly16Monitors) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     ASSERT_EQ(mock.capturedMonitors.size(), 16u);
 }
 
 TEST_F(RdpDisplayControlTest, Monitor0_HasPrimaryFlag) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     EXPECT_TRUE(mock.capturedMonitors[0].Flags & DISPLAY_CONTROL_MONITOR_PRIMARY);
 }
 
 TEST_F(RdpDisplayControlTest, OtherMonitors_NoPrimaryFlag) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     for (size_t i = 1; i < mock.capturedMonitors.size(); ++i) {
         EXPECT_FALSE(mock.capturedMonitors[i].Flags & DISPLAY_CONTROL_MONITOR_PRIMARY)
             << "monitor " << i;
@@ -65,7 +65,7 @@ TEST_F(RdpDisplayControlTest, OtherMonitors_NoPrimaryFlag) {
 }
 
 TEST_F(RdpDisplayControlTest, AllMonitors_1920x1080) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     for (size_t i = 0; i < mock.capturedMonitors.size(); ++i) {
         EXPECT_EQ(mock.capturedMonitors[i].Width,  1920u) << "monitor " << i;
         EXPECT_EQ(mock.capturedMonitors[i].Height, 1080u) << "monitor " << i;
@@ -73,34 +73,34 @@ TEST_F(RdpDisplayControlTest, AllMonitors_1920x1080) {
 }
 
 TEST_F(RdpDisplayControlTest, Monitor0_GridCoordinates_TopLeft) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     EXPECT_EQ(mock.capturedMonitors[0].Left, 0);
     EXPECT_EQ(mock.capturedMonitors[0].Top,  0);
 }
 
 TEST_F(RdpDisplayControlTest, Monitor3_GridCoordinates_TopRight) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     // col=3, row=0 → Left=3*1920, Top=0
     EXPECT_EQ(mock.capturedMonitors[3].Left, 3 * 1920);
     EXPECT_EQ(mock.capturedMonitors[3].Top,  0);
 }
 
 TEST_F(RdpDisplayControlTest, Monitor4_GridCoordinates_SecondRow) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     // col=0, row=1 → Left=0, Top=1*1080
     EXPECT_EQ(mock.capturedMonitors[4].Left, 0);
     EXPECT_EQ(mock.capturedMonitors[4].Top,  1 * 1080);
 }
 
 TEST_F(RdpDisplayControlTest, Monitor15_GridCoordinates_BottomRight) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     // col=3, row=3 → Left=3*1920, Top=3*1080
     EXPECT_EQ(mock.capturedMonitors[15].Left, 3 * 1920);
     EXPECT_EQ(mock.capturedMonitors[15].Top,  3 * 1080);
 }
 
 TEST_F(RdpDisplayControlTest, AllMonitors_LandscapeOrientation) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     for (size_t i = 0; i < mock.capturedMonitors.size(); ++i) {
         EXPECT_EQ(mock.capturedMonitors[i].Orientation, ORIENTATION_LANDSCAPE)
             << "monitor " << i;
@@ -108,7 +108,7 @@ TEST_F(RdpDisplayControlTest, AllMonitors_LandscapeOrientation) {
 }
 
 TEST_F(RdpDisplayControlTest, AllMonitors_ScaleFactors100) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     for (size_t i = 0; i < mock.capturedMonitors.size(); ++i) {
         EXPECT_EQ(mock.capturedMonitors[i].DesktopScaleFactor, 100u) << "monitor " << i;
         EXPECT_EQ(mock.capturedMonitors[i].DeviceScaleFactor,  100u) << "monitor " << i;
@@ -116,7 +116,7 @@ TEST_F(RdpDisplayControlTest, AllMonitors_ScaleFactors100) {
 }
 
 TEST_F(RdpDisplayControlTest, SendMonitorLayout_CallCount_One) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     EXPECT_EQ(mock.sendCallCount, 1);
 }
 
@@ -152,14 +152,14 @@ TEST_F(RdpDisplayControlTest, SendBeforeAttach_ReturnsError) {
     RdpDisplayControl ctrl2{layout2};
     layout2.BuildDefaultLayout();
     // Not attached — must not crash and must return a non-OK code.
-    UINT result = ctrl2.SendMonitorLayout();
+    UINT result = ctrl2.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     EXPECT_NE(result, CHANNEL_RC_OK);
 }
 
 // ── Grid coordinate exhaustive check ─────────────────────────────────────────
 
 TEST_F(RdpDisplayControlTest, AllMonitors_CorrectGridCoordinates) {
-    ctrl.SendMonitorLayout();
+    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     ASSERT_EQ(mock.capturedMonitors.size(), 16u);
 
     for (uint32_t i = 0; i < 16u; ++i) {

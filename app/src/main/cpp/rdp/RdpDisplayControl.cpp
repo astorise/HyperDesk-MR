@@ -2,6 +2,7 @@
 #include "../scene/MonitorLayout.h"
 #include "../util/Logger.h"
 
+#include <algorithm>
 #include <cstring>
 
 // Physical dimensions of a notional 24" display at 96 DPI.
@@ -32,42 +33,60 @@ UINT RdpDisplayControl::OnDisplayControlCaps(DispClientContext* ctx,
     LOGI("DisplayControl: CAPS received — MaxNumMonitors=%u MaxMonitorArea=%u",
          maxNumMonitors, maxMonitorAreaFactorA);
 
-    if (maxNumMonitors < 16) {
-        LOGE("DisplayControl: server supports only %u monitors, need 16", maxNumMonitors);
+    const uint32_t monitorCount =
+        std::min<uint32_t>(maxNumMonitors, MonitorLayout::kMaxMonitors);
+    if (monitorCount == 0) {
+        LOGE("DisplayControl: server reports zero monitors");
+        self->ActivateMonitorCount(0);
         return CHANNEL_RC_OK;
     }
 
-    return self->SendMonitorLayout();
+    if (monitorCount < MonitorLayout::kMaxMonitors) {
+        LOGW("DisplayControl: server supports only %u monitor(s), using degraded layout",
+             monitorCount);
+    }
+
+    return self->SendMonitorLayout(monitorCount);
 }
 
 // ── LAYOUT PDU (Task 5) ───────────────────────────────────────────────────────
 
-UINT RdpDisplayControl::SendMonitorLayout() {
+UINT RdpDisplayControl::SendMonitorLayout(uint32_t monitorCount) {
     if (!ctx_) {
         LOGE("DisplayControl: SendMonitorLayout called before Attach");
         return ERROR_INTERNAL_ERROR;
     }
 
-    auto entries = BuildLayoutPDU();
+    auto entries = BuildLayoutPDU(monitorCount);
+    if (entries.empty()) {
+        LOGE("DisplayControl: no monitor layout entries to send");
+        return ERROR_INVALID_DATA;
+    }
 
     UINT result = ctx_->SendMonitorLayout(ctx_,
                                           static_cast<UINT32>(entries.size()),
                                           entries.data());
     if (result == CHANNEL_RC_OK) {
         LOGI("DisplayControl: LAYOUT PDU sent (%zu monitors)", entries.size());
-        layout_->SetAllActive();
+        ActivateMonitorCount(static_cast<uint32_t>(entries.size()));
     } else {
         LOGE("DisplayControl: SendMonitorLayout failed: %u", result);
     }
     return result;
 }
 
-std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT>
-RdpDisplayControl::BuildLayoutPDU() const {
-    std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> entries;
-    entries.reserve(MonitorLayout::kMaxMonitors);
+void RdpDisplayControl::ActivateMonitorCount(uint32_t monitorCount) {
+    if (!layout_) return;
+    layout_->SetActiveCount(monitorCount);
+}
 
-    for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
+std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT>
+RdpDisplayControl::BuildLayoutPDU(uint32_t monitorCount) const {
+    std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> entries;
+    const uint32_t capped = std::min<uint32_t>(monitorCount, MonitorLayout::kMaxMonitors);
+    entries.reserve(capped);
+
+    for (uint32_t i = 0; i < capped; ++i) {
         const uint32_t col = i % MonitorLayout::kGridCols;
         const uint32_t row = i / MonitorLayout::kGridCols;
 

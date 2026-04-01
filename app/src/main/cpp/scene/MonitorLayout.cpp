@@ -1,6 +1,7 @@
 #include "MonitorLayout.h"
 #include "../util/Logger.h"
 
+#include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
@@ -60,6 +61,14 @@ void MonitorLayout::BindSurface(uint32_t monitorIndex, uint32_t rdpSurfaceId) {
     LOGI("MonitorLayout: monitor %u bound to RDP surface %u", monitorIndex, rdpSurfaceId);
 }
 
+void MonitorLayout::SetActiveCount(uint32_t count) {
+    const uint32_t capped = std::min(count, kMaxMonitors);
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        monitors_[i].active = (i < capped);
+    }
+    LOGI("MonitorLayout: %u monitor(s) active", capped);
+}
+
 void MonitorLayout::SetAllActive() {
-    for (auto& m : monitors_) m.active = true;
+    SetActiveCount(kMaxMonitors);
 }
