@@ -2,6 +2,7 @@
 #include "../xr/StatusOverlay.h"
 #include "../util/Logger.h"
 
+#include <camera/NdkCameraMetadata.h>
 #include <media/NdkImage.h>
 
 #include <cstdio>
@@ -9,6 +10,10 @@
 static constexpr int32_t kImageWidth  = 640;
 static constexpr int32_t kImageHeight = 480;
 static constexpr int32_t kMaxImages   = 2;
+
+// Meta passthrough camera vendor tags.
+static constexpr uint32_t kMetaCameraSourceTag   = 0x80004d00;
+static constexpr uint32_t kMetaCameraPositionTag = 0x80004d01;
 
 CameraManager::CameraManager(ANativeActivity* /*activity*/) {}
 
@@ -105,14 +110,32 @@ std::string CameraManager::FindCameraId() {
         return {};
     }
 
-    LOGI("CameraManager: %d cameras available", cameraIds->numCameras);
-    std::string result;
+    LOGI("CameraManager: %d camera(s) found", cameraIds->numCameras);
+    std::string leftPassthroughId;
+    std::string anyPassthroughId;
+    std::string backFacingId;
+    std::string anyId;
 
     for (int i = 0; i < cameraIds->numCameras; ++i) {
         const char* id = cameraIds->cameraIds[i];
         ACameraMetadata* metadata = nullptr;
         if (ACameraManager_getCameraCharacteristics(cameraMgr_, id, &metadata) != ACAMERA_OK) {
             continue;
+        }
+
+        bool isPassthrough = false;
+        uint8_t position = 255;
+
+        ACameraMetadata_const_entry sourceEntry{};
+        if (ACameraMetadata_getConstEntry(metadata, kMetaCameraSourceTag, &sourceEntry) == ACAMERA_OK
+            && sourceEntry.count > 0) {
+            isPassthrough = (sourceEntry.data.u8[0] == 0);
+        }
+
+        ACameraMetadata_const_entry positionEntry{};
+        if (ACameraMetadata_getConstEntry(metadata, kMetaCameraPositionTag, &positionEntry) == ACAMERA_OK
+            && positionEntry.count > 0) {
+            position = positionEntry.data.u8[0];
         }
 
         ACameraMetadata_const_entry lensFacing{};
@@ -129,19 +152,33 @@ std::string CameraManager::FindCameraId() {
             orientation = orientationEntry.data.i32[0];
         }
 
-        LOGI("CameraManager: camera '%s' facing=%u orientation=%d", id, facing, orientation);
+        LOGI("CameraManager: camera '%s' facing=%u orientation=%d passthrough=%d position=%u",
+             id, facing, orientation, isPassthrough ? 1 : 0, position);
 
-        if (facing == ACAMERA_LENS_FACING_BACK && result.empty()) {
-            result = id;
+        if (isPassthrough) {
+            if (anyPassthroughId.empty()) {
+                anyPassthroughId = id;
+            }
+            if (position == 0 && leftPassthroughId.empty()) {
+                leftPassthroughId = id;
+            }
         }
-        if (result.empty()) {
-            result = id;
+
+        if (facing == ACAMERA_LENS_FACING_BACK && backFacingId.empty()) {
+            backFacingId = id;
+        }
+        if (anyId.empty()) {
+            anyId = id;
         }
 
         ACameraMetadata_free(metadata);
     }
 
     ACameraManager_deleteCameraIdList(cameraIds);
+    std::string result = !leftPassthroughId.empty() ? leftPassthroughId
+                       : !anyPassthroughId.empty()  ? anyPassthroughId
+                       : !backFacingId.empty()      ? backFacingId
+                       : anyId;
     LOGI("CameraManager: using camera '%s'", result.c_str());
 
     if (StatusOverlay::sInstance) {
