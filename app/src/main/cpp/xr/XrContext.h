@@ -68,6 +68,7 @@ private:
     bool                 passthroughAvailable_ = false;
     bool                 cameraAccessAvailable_ = false;
     bool                 sessionRunning_ = false;
+    bool                 actionSetsAttached_ = false;
     XrPassthroughFB      passthrough_          = XR_NULL_HANDLE;
     XrPassthroughLayerFB passthroughLayer_     = XR_NULL_HANDLE;
 

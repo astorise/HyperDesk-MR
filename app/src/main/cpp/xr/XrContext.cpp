@@ -224,6 +224,7 @@ void XrContext::CreateSession() {
     sessionInfo.systemId = systemId_;
     XR_CHECK(xrCreateSession(instance_, &sessionInfo, &session_));
     LOGI("XrSession created");
+    actionSetsAttached_ = false;
 
     CreateActionSet();
 
@@ -358,11 +359,15 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
     switch (sessionState_) {
         case XR_SESSION_STATE_READY: {
             // Attach action sets before beginning the session's action loop.
-            if (actionSet_ != XR_NULL_HANDLE) {
+            if (actionSet_ != XR_NULL_HANDLE && !actionSetsAttached_) {
                 XrSessionActionSetsAttachInfo attachInfo{XR_TYPE_SESSION_ACTION_SETS_ATTACH_INFO};
                 attachInfo.countActionSets = 1;
                 attachInfo.actionSets      = &actionSet_;
                 XR_CHECK(xrAttachSessionActionSets(session_, &attachInfo));
+                actionSetsAttached_ = true;
+                LOGI("XR action set attached");
+            } else if (actionSet_ != XR_NULL_HANDLE) {
+                LOGI("XR action set already attached, skipping");
             }
 
             XrSessionBeginInfo beginInfo{XR_TYPE_SESSION_BEGIN_INFO};
@@ -370,6 +375,10 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
             XR_CHECK(xrBeginSession(session_, &beginInfo));
             sessionRunning_ = true;
             LOGI("XrSession begun");
+            if (worldSpace_ != XR_NULL_HANDLE) {
+                xrDestroySpace(worldSpace_);
+                worldSpace_ = XR_NULL_HANDLE;
+            }
             XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
             spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
             spaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
@@ -382,6 +391,10 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
         case XR_SESSION_STATE_STOPPING:
             sessionRunning_ = false;
             sessionActive = false;
+            if (worldSpace_ != XR_NULL_HANDLE) {
+                xrDestroySpace(worldSpace_);
+                worldSpace_ = XR_NULL_HANDLE;
+            }
             xrEndSession(session_);
             break;
         case XR_SESSION_STATE_EXITING:
