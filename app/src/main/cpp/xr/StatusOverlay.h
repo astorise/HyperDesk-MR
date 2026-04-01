@@ -49,7 +49,7 @@ public:
 
 private:
     static constexpr size_t kMaxStatusLines = 6;
-    static constexpr int    kMaxLogLines    = 12;
+    static constexpr int    kMaxLogLines    = 8;
 
     XrContext&   ctx_;
     uint32_t     texWidth_;

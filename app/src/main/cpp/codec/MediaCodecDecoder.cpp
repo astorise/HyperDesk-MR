@@ -137,15 +137,23 @@ bool MediaCodecDecoder::SubmitFrame(const uint8_t* data, size_t size,
 
 void MediaCodecDecoder::Pause() {
     if (running_) {
-        AMediaCodec_stop(codec_);
+        media_status_t status = AMediaCodec_stop(codec_);
         running_ = false;
+        if (status != AMEDIA_OK) {
+            LOGE("Decoder[%u]: pause stop failed: %d", monitorIndex_, status);
+            return;
+        }
         LOGD("Decoder[%u]: paused (codec stopped)", monitorIndex_);
     }
 }
 
 void MediaCodecDecoder::Resume() {
     if (configured_ && !running_) {
-        AMediaCodec_start(codec_);
+        media_status_t status = AMediaCodec_start(codec_);
+        if (status != AMEDIA_OK) {
+            LOGE("Decoder[%u]: resume start failed: %d", monitorIndex_, status);
+            return;
+        }
         running_ = true;
         LOGD("Decoder[%u]: resumed", monitorIndex_);
     }

@@ -132,12 +132,29 @@ void android_main(android_app* app) {
     // RDP error callback — show error text in the status overlay.
     state.rdpManager->SetErrorCallback([&state](uint32_t errorCode) {
         const char* msg = ErrorUtils::RdpErrorToString(errorCode);
+        const char* hint = ErrorUtils::RdpErrorHint(errorCode);
         char buf[128];
+
+        state.statusOverlay->SetStatusLine(0, "rdp: connect failed");
+        snprintf(buf, sizeof(buf), "rdp: 0x%08X", errorCode);
+        state.statusOverlay->SetStatusLine(1, buf);
+        if (msg) {
+            snprintf(buf, sizeof(buf), "rdp: %s", msg);
+            state.statusOverlay->SetStatusLine(2, buf);
+        }
+        if (hint) {
+            snprintf(buf, sizeof(buf), "hint: %s", hint);
+            state.statusOverlay->SetStatusLine(3, buf);
+        }
+
         snprintf(buf, sizeof(buf), "[ERR] RDP error 0x%08X", errorCode);
         state.statusOverlay->AddLog(buf);
         if (msg) {
             LOGE("RDP error: %s (0x%08X)", msg, errorCode);
             state.statusOverlay->AddLog(std::string("[ERR] ") + msg);
+        }
+        if (hint) {
+            state.statusOverlay->AddLog(std::string("[WARN] ") + hint);
         }
     });
 

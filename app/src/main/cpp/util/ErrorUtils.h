@@ -8,6 +8,8 @@ namespace ErrorUtils {
 
 inline const char* RdpErrorToString(uint32_t errorCode) {
     switch (errorCode) {
+        case 0x00010001:
+            return "Server Closed Session";
         case FREERDP_ERROR_AUTHENTICATION_FAILED:
             return "Access Denied";
         case FREERDP_ERROR_CONNECT_TRANSPORT_FAILED:
@@ -29,6 +31,22 @@ inline const char* RdpErrorToString(uint32_t errorCode) {
             return nullptr;
         default:
             return "Connection Failed";
+    }
+}
+
+inline const char* RdpErrorHint(uint32_t errorCode) {
+    switch (errorCode) {
+        case 0x00010001:
+            return "Other RDP/admin session";
+        case FREERDP_ERROR_AUTHENTICATION_FAILED:
+            return "Check username/password";
+        case FREERDP_ERROR_CONNECT_TRANSPORT_FAILED:
+            return "Check host, port, network";
+        case FREERDP_ERROR_DNS_ERROR:
+        case FREERDP_ERROR_DNS_NAME_NOT_FOUND:
+            return "Check hostname or IP";
+        default:
+            return nullptr;
     }
 }
 

@@ -210,7 +210,7 @@ constexpr uint8_t kFont5x7[][7] = {
 constexpr int kGlyphW       = 5;
 constexpr int kGlyphH       = 7;
 constexpr int kGlyphSpacing = 1;  // 1px between glyphs
-constexpr int kScale        = 3;  // render each font pixel as 3×3 screen pixels
+constexpr int kScale        = 4;  // render each font pixel as 4x4 screen pixels
 
 void DrawGlyph(uint8_t* rgba, uint32_t texW, uint32_t texH,
                int ox, int oy, char ch,
@@ -349,8 +349,8 @@ const XrCompositionLayerQuad* StatusOverlay::GetCompositionLayer(XrSpace worldSp
 
     // Place debug console at eye height, 1.5m in front, facing the user.
     compositionLayer_.pose.orientation = {0.f, 0.f, 0.f, 1.f};
-    compositionLayer_.pose.position   = {0.f, 1.2f, -1.5f};
-    const float overlayWidth = 1.2f;
+    compositionLayer_.pose.position   = {0.f, 1.15f, -1.3f};
+    const float overlayWidth = 1.35f;
     compositionLayer_.size            = {overlayWidth, overlayWidth * (static_cast<float>(texHeight_) /
                                                                        static_cast<float>(texWidth_))};
 
@@ -445,17 +445,22 @@ void StatusOverlay::RenderTextToStaging() {
     }
 
     int charPixelW  = kGlyphW * kScale + kGlyphSpacing * kScale;
-    int lineHeight  = kGlyphH * kScale + 4;  // 4px spacing between lines
-    int margin      = 6;
+    int lineHeight  = kGlyphH * kScale + 6;
+    int margin      = 10;
+    int maxChars    = std::max(1, (static_cast<int>(texWidth_) - margin * 2) / charPixelW);
     size_t lineIdx  = 0;
 
     auto drawLine = [&](const std::string& line, uint8_t r, uint8_t g, uint8_t b) {
         if (line.empty()) return;
-        int y = margin + static_cast<int>(lineIdx++) * lineHeight;
-        for (size_t ci = 0; ci < line.size(); ++ci) {
-            DrawGlyph(rgba, texWidth_, texHeight_,
-                      margin + static_cast<int>(ci) * charPixelW, y,
-                      line[ci], r, g, b);
+        for (size_t start = 0; start < line.size(); start += maxChars) {
+            int y = margin + static_cast<int>(lineIdx++) * lineHeight;
+            if (y >= static_cast<int>(texHeight_)) return;
+            size_t count = std::min(static_cast<size_t>(maxChars), line.size() - start);
+            for (size_t ci = 0; ci < count; ++ci) {
+                DrawGlyph(rgba, texWidth_, texHeight_,
+                          margin + static_cast<int>(ci) * charPixelW, y,
+                          line[start + ci], r, g, b);
+            }
         }
     };
 
