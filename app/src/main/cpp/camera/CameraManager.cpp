@@ -7,8 +7,8 @@
 
 #include <cstdio>
 
-static constexpr int32_t kImageWidth  = 640;
-static constexpr int32_t kImageHeight = 480;
+static constexpr int32_t kImageWidth  = 1280;
+static constexpr int32_t kImageHeight = 960;
 static constexpr int32_t kMaxImages   = 2;
 
 // Meta passthrough camera vendor tags.

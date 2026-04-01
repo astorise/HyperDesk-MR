@@ -57,7 +57,7 @@ private:
 
     // Attempt to decode a QR string from luminance image data.
     static std::string DecodeQr(const uint8_t* data, int32_t width, int32_t height,
-                                int32_t rowStride);
+                                int32_t rowStride, bool aggressive);
 
     // Parse JSON connection params.  Returns false if parsing fails.
     static bool ParseConnectionParams(const std::string& json,

@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <vector>
 
 // ── Minimal JSON parser for {"h":"...", "u":"...", "p":"...", "d":"...", "port":N}
 // We avoid pulling in a JSON library for this single, simple format.
@@ -59,6 +60,22 @@ static int ExtractJsonInt(const std::string& json, const std::string& key, int d
     long val = std::strtol(json.c_str() + pos, &end, 10);
     if (end == json.c_str() + pos) return defaultVal;
     return static_cast<int>(val);
+}
+
+static std::string ReadQrView(const uint8_t* data, int32_t width, int32_t height,
+                              int32_t rowStride, const ZXing::ReaderOptions& opts) {
+    ZXing::ImageView image(data, width, height, ZXing::ImageFormat::Lum, rowStride);
+    auto result = ZXing::ReadBarcode(image, opts);
+    return result.isValid() ? result.text() : std::string{};
+}
+
+static std::vector<uint8_t> CopyCrop(const uint8_t* data, int32_t rowStride, int32_t x0,
+                                     int32_t y0, int32_t cropWidth, int32_t cropHeight) {
+    std::vector<uint8_t> crop(cropWidth * cropHeight);
+    for (int32_t y = 0; y < cropHeight; ++y) {
+        std::memcpy(crop.data() + y * cropWidth, data + (y0 + y) * rowStride + x0, cropWidth);
+    }
+    return crop;
 }
 
 // ── QrScanner ────────────────────────────────────────────────────────────────
@@ -143,7 +160,8 @@ void QrScanner::OnFrame(const uint8_t* data, int32_t width, int32_t height, int3
     ++frameCount_;
     if (hasResult_.load()) return;
 
-    std::string decoded = DecodeQr(data, width, height, rowStride);
+    bool aggressiveDecode = (decodeMisses_ % 15 == 0);
+    std::string decoded = DecodeQr(data, width, height, rowStride, aggressiveDecode);
     if (decoded.empty()) {
         ++decodeMisses_;
 
@@ -215,17 +233,61 @@ bool QrScanner::SaveSnapshot(const std::string& path) {
 }
 
 std::string QrScanner::DecodeQr(const uint8_t* data, int32_t width, int32_t height,
-                                 int32_t rowStride) {
-    ZXing::ImageView image(data, width, height, ZXing::ImageFormat::Lum, rowStride);
+                                int32_t rowStride, bool aggressive) {
+    ZXing::ReaderOptions fastOpts;
+    fastOpts.setFormats(ZXing::BarcodeFormat::QRCode);
+    fastOpts.setTryHarder(false);
 
-    ZXing::ReaderOptions opts;
-    opts.setFormats(ZXing::BarcodeFormat::QRCode);
-    opts.setTryHarder(false);
-
-    auto result = ZXing::ReadBarcode(image, opts);
-    if (result.isValid()) {
-        return result.text();
+    if (auto decoded = ReadQrView(data, width, height, rowStride, fastOpts); !decoded.empty()) {
+        return decoded;
     }
+
+    if (!aggressive) return {};
+
+    ZXing::ReaderOptions aggressiveOpts;
+    aggressiveOpts.setFormats(ZXing::BarcodeFormat::QRCode);
+    aggressiveOpts.setTryHarder(true);
+
+    if (auto decoded = ReadQrView(data, width, height, rowStride, aggressiveOpts); !decoded.empty()) {
+        return decoded;
+    }
+
+    struct CropSpec {
+        const char* name;
+        float x;
+        float y;
+        float w;
+        float h;
+    };
+
+    static constexpr CropSpec kCropSpecs[] = {
+        {"center-80", 0.10f, 0.10f, 0.80f, 0.80f},
+        {"center-66", 0.17f, 0.17f, 0.66f, 0.66f},
+        {"upper-70",  0.15f, 0.05f, 0.70f, 0.70f},
+        {"left-70",   0.05f, 0.15f, 0.70f, 0.70f},
+        {"right-70",  0.25f, 0.15f, 0.70f, 0.70f},
+    };
+
+    for (const auto& spec : kCropSpecs) {
+        int32_t cropWidth = static_cast<int32_t>(width * spec.w);
+        int32_t cropHeight = static_cast<int32_t>(height * spec.h);
+        int32_t x0 = static_cast<int32_t>(width * spec.x);
+        int32_t y0 = static_cast<int32_t>(height * spec.y);
+
+        if (cropWidth <= 0 || cropHeight <= 0 || x0 < 0 || y0 < 0 ||
+            x0 + cropWidth > width || y0 + cropHeight > height) {
+            continue;
+        }
+
+        auto crop = CopyCrop(data, rowStride, x0, y0, cropWidth, cropHeight);
+        if (auto decoded = ReadQrView(crop.data(), cropWidth, cropHeight, cropWidth, aggressiveOpts);
+            !decoded.empty()) {
+            LOGI("QrScanner: decoded QR from %s crop (%dx%d @ %d,%d)",
+                 spec.name, cropWidth, cropHeight, x0, y0);
+            return decoded;
+        }
+    }
+
     return {};
 }
 
