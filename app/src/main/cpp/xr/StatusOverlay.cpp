@@ -12,6 +12,38 @@
 // Covers printable ASCII 0x20–0x7E (space through tilde).
 namespace {
 
+bool ShouldShowOverlayLogLine(const std::string& line) {
+    if (line.empty()) return false;
+
+    if (line.find("[ERR]") != std::string::npos ||
+        line.find("[WARN]") != std::string::npos) {
+        return true;
+    }
+
+    constexpr const char* kImportantNeedles[] = {
+        "QR scanned",
+        "RDP connected",
+        "Display control ready",
+        "GFX pipeline ready",
+        "GFX common bootstrap",
+        "Channel:",
+        "ResetGraphics",
+        "Surface ",
+        "first H264 frame",
+        "Video decoders ready",
+        "AVC420 stream missing data",
+        "AVC444 stream unsupported"
+    };
+
+    for (const char* needle : kImportantNeedles) {
+        if (line.find(needle) != std::string::npos) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 // clang-format off
 constexpr uint8_t kFont5x7[][7] = {
     // 0x20 SPACE
@@ -277,6 +309,8 @@ void StatusOverlay::SetMessage(const std::string& message) {
 }
 
 void StatusOverlay::AddLog(const std::string& line) {
+    if (!ShouldShowOverlayLogLine(line)) return;
+
     std::lock_guard lock(messageMutex_);
     logLines_.push_back(line);
     while (static_cast<int>(logLines_.size()) > kMaxLogLines)
