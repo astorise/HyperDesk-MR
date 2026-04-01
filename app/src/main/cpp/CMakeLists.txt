@@ -63,6 +63,8 @@ find_library(mediandk-lib mediandk)
 find_library(vulkan-lib   vulkan)
 find_library(camera2ndk-lib camera2ndk)
 find_library(nativewindow-lib nativewindow)
+find_library(opensles-lib OpenSLES)
+find_library(z-lib z)
 
 # ── OpenXR Loader (Meta XR SDK prebuilt) ──────────────────────────────────────
 add_library(openxr_loader SHARED IMPORTED)
@@ -151,4 +153,6 @@ target_link_libraries(hyperdesk_mr
         ${vulkan-lib}
         ${camera2ndk-lib}
         ${nativewindow-lib}
+        ${opensles-lib}
+        ${z-lib}
 )
