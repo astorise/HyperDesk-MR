@@ -87,6 +87,7 @@ public:
 
 private:
     static RdpConnectionManager* GetSelfFromGfx(RdpgfxClientContext* gfx);
+    static const char* GfxCodecToString(UINT16 codecId);
 
     RdpDisplayControl&   displayControl_;
     freerdp*             instance_  = nullptr;

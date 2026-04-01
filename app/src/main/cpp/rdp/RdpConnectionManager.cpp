@@ -117,8 +117,15 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_bool(settings, FreeRDP_DynamicResolutionUpdate,     TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SurfaceCommandsEnabled,      TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_SupportMonitorLayoutPdu,     TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_RemoteFxCodec,               FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxProgressive,              FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxProgressiveV2,            FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxPlanar,                   FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxThinClient,               FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxSmallCache,               FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxH264,                     TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444,                   FALSE);
+    freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2,                 FALSE);
 
     // Disable NLA — OpenSSL on Android lacks the LEGACY provider (MD4)
     // which NTLM password hashing requires.  Fall back to TLS security.
@@ -218,6 +225,33 @@ RdpConnectionManager* RdpConnectionManager::GetSelfFromGfx(RdpgfxClientContext* 
 
     auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(gdi->context);
     return ctx ? ctx->self : nullptr;
+}
+
+const char* RdpConnectionManager::GfxCodecToString(UINT16 codecId) {
+    switch (codecId) {
+        case RDPGFX_CODECID_UNCOMPRESSED:
+            return "UNCOMPRESSED";
+        case RDPGFX_CODECID_CAVIDEO:
+            return "CAVIDEO";
+        case RDPGFX_CODECID_CLEARCODEC:
+            return "CLEARCODEC";
+        case RDPGFX_CODECID_CAPROGRESSIVE:
+            return "CAPROGRESSIVE";
+        case RDPGFX_CODECID_PLANAR:
+            return "PLANAR";
+        case RDPGFX_CODECID_AVC420:
+            return "AVC420";
+        case RDPGFX_CODECID_ALPHA:
+            return "ALPHA";
+        case RDPGFX_CODECID_CAPROGRESSIVE_V2:
+            return "CAPROGRESSIVE_V2";
+        case RDPGFX_CODECID_AVC444:
+            return "AVC444";
+        case RDPGFX_CODECID_AVC444v2:
+            return "AVC444v2";
+        default:
+            return "UNKNOWN";
+    }
 }
 
 static BOOL OnBeginPaint(rdpContext* /*context*/) { return TRUE; }
@@ -340,8 +374,9 @@ UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
     }
 
     if (cmd->codecId != RDPGFX_CODECID_AVC420) {
-        ScreenLog("[WARN] Unsupported GFX codec=%u surface=%u bytes=%u",
-                  cmd->codecId, cmd->surfaceId, cmd->length);
+        ScreenLog("[WARN] GFX codec=%s(%u) surface=%u bytes=%u",
+                  GfxCodecToString(cmd->codecId), cmd->codecId,
+                  cmd->surfaceId, cmd->length);
         return CHANNEL_RC_OK;
     }
 
