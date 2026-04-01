@@ -123,6 +123,8 @@ private:
         UINT (*)(RdpgfxClientContext*, const RDPGFX_CAPS_ADVERTISE_PDU*);
     using GfxResetGraphicsCallback =
         UINT (*)(RdpgfxClientContext*, const RDPGFX_RESET_GRAPHICS_PDU*);
+    using GfxSurfaceCommandCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_SURFACE_COMMAND*);
     using GfxStartFrameCallback =
         UINT (*)(RdpgfxClientContext*, const RDPGFX_START_FRAME_PDU*);
     using GfxEndFrameCallback =
@@ -136,8 +138,15 @@ private:
     GfxCreateSurfaceCallback          prevCreateSurface_ = nullptr;
     GfxDeleteSurfaceCallback          prevDeleteSurface_ = nullptr;
     GfxResetGraphicsCallback          prevResetGraphics_ = nullptr;
+    GfxSurfaceCommandCallback         prevSurfaceCommand_ = nullptr;
     GfxStartFrameCallback             prevStartFrame_ = nullptr;
     GfxEndFrameCallback               prevEndFrame_ = nullptr;
     GfxMapSurfaceToOutputCallback     prevMapSurfaceToOutput_ = nullptr;
     GfxMapSurfaceToScaledOutputCallback prevMapSurfaceToScaledOutput_ = nullptr;
+
+    bool softwareFallbackActive_ = false;
+    bool softwareFramePending_ = false;
+    bool softwareFallbackLogged_ = false;
+
+    void PushSoftwareFallbackFrame(RdpgfxClientContext* gfx);
 };

@@ -7,6 +7,7 @@
 #include <openxr/openxr_platform.h>
 #include <android/hardware_buffer.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -30,6 +31,9 @@ public:
     // Called once per slot during setup (Task 7).
     void BindExternalHardwareBuffer(uint32_t imageIndex, AHardwareBuffer* ahb);
 
+    // Software fallback path for GDI-decoded desktop frames.
+    bool UploadRgbaFrame(uint32_t imageIndex, const uint8_t* rgba, size_t sizeBytes);
+
     // Returns the sub-image descriptor used in XrCompositionLayerQuad.
     XrSwapchainSubImage GetSubImage() const;
 
@@ -50,4 +54,11 @@ private:
     };
     std::vector<XrSwapchainImageVulkanKHR> images_;
     std::vector<SlotMemory>                slotMemory_;
+
+    VkBuffer       stagingBuffer_ = VK_NULL_HANDLE;
+    VkDeviceMemory stagingMemory_ = VK_NULL_HANDLE;
+    void*          stagingMapped_ = nullptr;
+
+    void CreateStagingBuffer();
+    bool UploadStagingToSwapchainImage(VkImage image);
 };

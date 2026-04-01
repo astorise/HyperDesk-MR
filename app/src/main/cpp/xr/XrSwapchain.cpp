@@ -3,6 +3,7 @@
 #include "../util/Logger.h"
 #include "../util/Check.h"
 
+#include <cstring>
 #include <vulkan/vulkan_android.h>
 
 HdSwapchain::HdSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32_t monitorIndex)
@@ -10,7 +11,8 @@ HdSwapchain::HdSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32
 
     XrSwapchainCreateInfo info{XR_TYPE_SWAPCHAIN_CREATE_INFO};
     info.usageFlags  = XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT |
-                       XR_SWAPCHAIN_USAGE_SAMPLED_BIT;
+                       XR_SWAPCHAIN_USAGE_SAMPLED_BIT |
+                       XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
     info.format      = VK_FORMAT_R8G8B8A8_UNORM;
     info.sampleCount = 1;
     info.width       = width_;
@@ -29,12 +31,20 @@ HdSwapchain::HdSwapchain(XrContext& ctx, uint32_t width, uint32_t height, uint32
         swapchain_, imageCount, &imageCount,
         reinterpret_cast<XrSwapchainImageBaseHeader*>(images_.data())));
 
+    CreateStagingBuffer();
     LOGD("XrSwapchain[%u] created: %u images %ux%u", monitorIndex_, imageCount, width_, height_);
 }
 
 HdSwapchain::~HdSwapchain() {
     // Free any externally-bound device memory.
     VkDevice dev = ctx_.GetVkDevice();
+    if (stagingBuffer_ != VK_NULL_HANDLE) {
+        if (stagingMapped_) vkUnmapMemory(dev, stagingMemory_);
+        vkDestroyBuffer(dev, stagingBuffer_, nullptr);
+    }
+    if (stagingMemory_ != VK_NULL_HANDLE) {
+        vkFreeMemory(dev, stagingMemory_, nullptr);
+    }
     for (auto& slot : slotMemory_) {
         if (slot.memory != VK_NULL_HANDLE) vkFreeMemory(dev, slot.memory, nullptr);
     }
@@ -120,6 +130,119 @@ void HdSwapchain::BindExternalHardwareBuffer(uint32_t imageIndex, AHardwareBuffe
     }
     slotMemory_[imageIndex] = {image, mem};
     LOGD("XrSwapchain[%u] slot %u bound to AHardwareBuffer", monitorIndex_, imageIndex);
+}
+
+bool HdSwapchain::UploadRgbaFrame(uint32_t imageIndex, const uint8_t* rgba, size_t sizeBytes) {
+    if (!rgba || imageIndex >= images_.size() || !stagingMapped_) return false;
+
+    const size_t expectedSize = static_cast<size_t>(width_) * height_ * 4u;
+    if (sizeBytes < expectedSize) {
+        LOGE("XrSwapchain[%u]: software frame too small (%zu < %zu)",
+             monitorIndex_, sizeBytes, expectedSize);
+        return false;
+    }
+
+    std::memcpy(stagingMapped_, rgba, expectedSize);
+    return UploadStagingToSwapchainImage(images_[imageIndex].image);
+}
+
+void HdSwapchain::CreateStagingBuffer() {
+    VkDevice dev = ctx_.GetVkDevice();
+    const VkDeviceSize bufferSize = static_cast<VkDeviceSize>(width_) * height_ * 4u;
+
+    VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
+    bufInfo.size = bufferSize;
+    bufInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    VK_CHECK(vkCreateBuffer(dev, &bufInfo, nullptr, &stagingBuffer_));
+
+    VkMemoryRequirements memReqs{};
+    vkGetBufferMemoryRequirements(dev, stagingBuffer_, &memReqs);
+
+    VkPhysicalDeviceMemoryProperties memProps{};
+    vkGetPhysicalDeviceMemoryProperties(ctx_.GetVkPhysDevice(), &memProps);
+
+    uint32_t memIdx = UINT32_MAX;
+    for (uint32_t i = 0; i < memProps.memoryTypeCount; ++i) {
+        const VkMemoryPropertyFlags required =
+            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        if ((memReqs.memoryTypeBits & (1u << i)) &&
+            (memProps.memoryTypes[i].propertyFlags & required) == required) {
+            memIdx = i;
+            break;
+        }
+    }
+
+    if (memIdx == UINT32_MAX) {
+        LOGE("XrSwapchain[%u]: no HOST_VISIBLE staging memory type", monitorIndex_);
+        return;
+    }
+
+    VkMemoryAllocateInfo allocInfo{VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO};
+    allocInfo.allocationSize = memReqs.size;
+    allocInfo.memoryTypeIndex = memIdx;
+    VK_CHECK(vkAllocateMemory(dev, &allocInfo, nullptr, &stagingMemory_));
+    VK_CHECK(vkBindBufferMemory(dev, stagingBuffer_, stagingMemory_, 0));
+    VK_CHECK(vkMapMemory(dev, stagingMemory_, 0, bufferSize, 0, &stagingMapped_));
+}
+
+bool HdSwapchain::UploadStagingToSwapchainImage(VkImage image) {
+    VkDevice dev = ctx_.GetVkDevice();
+    VkQueue queue = ctx_.GetVkQueue();
+
+    VkCommandPoolCreateInfo poolInfo{VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
+    poolInfo.queueFamilyIndex = ctx_.GetVkQueueFamily();
+    poolInfo.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
+    VkCommandPool pool = VK_NULL_HANDLE;
+    VK_CHECK(vkCreateCommandPool(dev, &poolInfo, nullptr, &pool));
+
+    VkCommandBufferAllocateInfo allocInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
+    allocInfo.commandPool = pool;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandBufferCount = 1;
+    VkCommandBuffer cmd = VK_NULL_HANDLE;
+    VK_CHECK(vkAllocateCommandBuffers(dev, &allocInfo, &cmd));
+
+    VkCommandBufferBeginInfo beginInfo{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
+
+    VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
+    barrier.srcAccessMask = 0;
+    barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.image = image;
+    barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+    vkCmdPipelineBarrier(cmd,
+                         VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VkBufferImageCopy region{};
+    region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
+    region.imageExtent = {width_, height_, 1};
+    vkCmdCopyBufferToImage(cmd, stagingBuffer_, image,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+    barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+    barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+    barrier.newLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    vkCmdPipelineBarrier(cmd,
+                         VK_PIPELINE_STAGE_TRANSFER_BIT,
+                         VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
+                         0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    VK_CHECK(vkEndCommandBuffer(cmd));
+
+    VkSubmitInfo submitInfo{VK_STRUCTURE_TYPE_SUBMIT_INFO};
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &cmd;
+    VK_CHECK(vkQueueSubmit(queue, 1, &submitInfo, VK_NULL_HANDLE));
+    vkQueueWaitIdle(queue);
+
+    vkDestroyCommandPool(dev, pool, nullptr);
+    return true;
 }
 
 XrSwapchainSubImage HdSwapchain::GetSubImage() const {

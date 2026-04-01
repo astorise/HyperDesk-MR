@@ -209,10 +209,14 @@ void RdpConnectionManager::Disconnect() {
     prevDeleteSurface_ = nullptr;
     prevCapsAdvertise_ = nullptr;
     prevResetGraphics_ = nullptr;
+    prevSurfaceCommand_ = nullptr;
     prevStartFrame_ = nullptr;
     prevEndFrame_ = nullptr;
     prevMapSurfaceToOutput_ = nullptr;
     prevMapSurfaceToScaledOutput_ = nullptr;
+    softwareFallbackActive_ = false;
+    softwareFramePending_ = false;
+    softwareFallbackLogged_ = false;
 }
 
 // ── Static callbacks ──────────────────────────────────────────────────────────
@@ -319,6 +323,7 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
             self->prevResetGraphics_ = ctx->gfx->ResetGraphics;
             self->prevCreateSurface_ = ctx->gfx->CreateSurface;
             self->prevDeleteSurface_ = ctx->gfx->DeleteSurface;
+            self->prevSurfaceCommand_ = ctx->gfx->SurfaceCommand;
             self->prevStartFrame_ = ctx->gfx->StartFrame;
             self->prevEndFrame_ = ctx->gfx->EndFrame;
             self->prevMapSurfaceToOutput_ = ctx->gfx->MapSurfaceToOutput;
@@ -377,6 +382,18 @@ UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
         ScreenLog("[WARN] GFX codec=%s(%u) surface=%u bytes=%u",
                   GfxCodecToString(cmd->codecId), cmd->codecId,
                   cmd->surfaceId, cmd->length);
+
+        self->softwareFallbackActive_ = true;
+        self->softwareFramePending_ = true;
+        if (!self->softwareFallbackLogged_) {
+            self->softwareFallbackLogged_ = true;
+            self->displayControl_.ActivateMonitorCount(1);
+            ScreenLog("[WARN] software GFX fallback on monitor[0]");
+        }
+
+        if (self->prevSurfaceCommand_) {
+            return self->prevSurfaceCommand_(gfx, cmd);
+        }
         return CHANNEL_RC_OK;
     }
 
@@ -477,6 +494,9 @@ UINT RdpConnectionManager::OnGfxResetGraphics(RdpgfxClientContext* gfx,
     std::fill(std::begin(self->surfaceToMonitor_), std::end(self->surfaceToMonitor_), UINT32_MAX);
     std::fill(std::begin(self->monitorFrameCount_), std::end(self->monitorFrameCount_), 0u);
     self->nextMonitorIdx_ = 0;
+    self->softwareFallbackActive_ = false;
+    self->softwareFramePending_ = false;
+    self->softwareFallbackLogged_ = false;
 
     ScreenLog("[OK] ResetGraphics %ux%u monitors=%u",
               pdu->width, pdu->height, pdu->monitorCount);
@@ -549,7 +569,15 @@ UINT RdpConnectionManager::OnGfxEndFrame(RdpgfxClientContext* gfx,
     }
 
     if (self->prevEndFrame_) {
-        return self->prevEndFrame_(gfx, pdu);
+        const UINT rc = self->prevEndFrame_(gfx, pdu);
+        if (rc != CHANNEL_RC_OK) {
+            return rc;
+        }
+    }
+
+    if (self->softwareFallbackActive_ && self->softwareFramePending_) {
+        self->PushSoftwareFallbackFrame(gfx);
+        self->softwareFramePending_ = false;
     }
     return CHANNEL_RC_OK;
 }
@@ -586,4 +614,29 @@ void RdpConnectionManager::OnGfxSurface(uint32_t surfaceId, const uint8_t* data,
     // Task 9: memcpy of the network payload happens in VirtualMonitor::FeedToCodec.
     // Task 10: AMediaCodec_queueInputBuffer with failure logging is in FeedToCodec.
     monitor->SubmitFrame(data, size, presentationTimeUs);
+}
+
+void RdpConnectionManager::PushSoftwareFallbackFrame(RdpgfxClientContext* gfx) {
+    auto* gdi = gfx ? static_cast<rdpGdi*>(gfx->custom) : nullptr;
+    if (!gdi || !gdi->primary_buffer || gdi->width <= 0 || gdi->height <= 0 || gdi->stride == 0) {
+        ScreenLog("[ERR] software GFX frame unavailable");
+        return;
+    }
+
+    VirtualMonitor* monitor = monitors_[0];
+    if (!monitor) {
+        ScreenLog("[ERR] monitor[0] unavailable for software fallback");
+        return;
+    }
+
+    monitor->SubmitSoftwareFrame(gdi->primary_buffer,
+                                 static_cast<uint32_t>(gdi->width),
+                                 static_cast<uint32_t>(gdi->height),
+                                 gdi->stride);
+
+    if (++monitorFrameCount_[0] == 1) {
+        ScreenLog("[OK] monitor[0] first software GFX frame %ux%u",
+                  static_cast<uint32_t>(gdi->width),
+                  static_cast<uint32_t>(gdi->height));
+    }
 }

@@ -5,6 +5,7 @@
 #include "../xr/XrContext.h"
 #include "../util/DebugUtils.h"
 
+#include <algorithm>
 #include <cstring>
 
 // ── Constructor / Destructor ───────────────────────────────────────────────────
@@ -88,17 +89,48 @@ void VirtualMonitor::SubmitFrame(const uint8_t* data, size_t size, int64_t pts) 
     }
 }
 
+void VirtualMonitor::SubmitSoftwareFrame(const uint8_t* bgra, uint32_t srcWidth,
+                                         uint32_t srcHeight, uint32_t srcStride) {
+    if (!bgra || srcWidth == 0 || srcHeight == 0 || srcStride < srcWidth * 4u) {
+        return;
+    }
+
+    std::vector<uint8_t> scaled(static_cast<size_t>(width_) * height_ * 4u);
+    for (uint32_t y = 0; y < height_; ++y) {
+        const uint32_t srcY = std::min(srcHeight - 1, (y * srcHeight) / height_);
+        const uint8_t* srcRow = bgra + static_cast<size_t>(srcY) * srcStride;
+        uint8_t* dstRow = scaled.data() + static_cast<size_t>(y) * width_ * 4u;
+
+        for (uint32_t x = 0; x < width_; ++x) {
+            const uint32_t srcX = std::min(srcWidth - 1, (x * srcWidth) / width_);
+            const uint8_t* srcPixel = srcRow + static_cast<size_t>(srcX) * 4u;
+            uint8_t* dstPixel = dstRow + static_cast<size_t>(x) * 4u;
+
+            dstPixel[0] = srcPixel[2];
+            dstPixel[1] = srcPixel[1];
+            dstPixel[2] = srcPixel[0];
+            dstPixel[3] = 255;
+        }
+    }
+
+    std::lock_guard<std::mutex> lock(softwareFrameMutex_);
+    softwareFrameRgba_.swap(scaled);
+    softwareFrameReady_ = true;
+}
+
 // ── GetCompositionLayer (Tasks 8 + 10) ────────────────────────────────────────
 
 // Task 8: Acquire latest image from AImageReader; bind to swapchain.
 // Task 10: Populate and return a non-null XrCompositionLayerQuad*.
 const XrCompositionLayerQuad* VirtualMonitor::GetCompositionLayer(
         XrSpace worldSpace, XrPosef pose, XrExtent2Df size) {
-    if (!swapchain_ || !decoder_ || !decoder_->IsRunning()) return nullptr;
+    if (!swapchain_) return nullptr;
 
     // Task 8 — try to acquire the most recently decoded frame.
-    AHardwareBuffer* ahb      = nullptr;
-    const bool       hasFrame = bridge_->AcquireLatestFrame(&ahb);
+    const bool canUseHardwareDecoder = decoder_ && decoder_->IsRunning();
+    AHardwareBuffer* ahb = nullptr;
+    const bool hasHardwareFrame =
+        canUseHardwareDecoder && bridge_ && bridge_->AcquireLatestFrame(&ahb);
 
     // Acquire and wait for a swapchain image slot.
     uint32_t imageIndex = 0;
@@ -108,7 +140,7 @@ const XrCompositionLayerQuad* VirtualMonitor::GetCompositionLayer(
     // Rebind the current swapchain slot to the latest decoder buffer.
     // OpenXR rotates swapchain images, so binding a single slot once leaves
     // the remaining images transparent/invisible.
-    if (hasFrame) {
+    if (hasHardwareFrame) {
         swapchain_->BindExternalHardwareBuffer(imageIndex, ahb);
         if (!firstBoundFrameLogged_) {
             LOGI("VirtualMonitor[%u]: first GPU frame bound to swapchain slot %u",
@@ -117,8 +149,33 @@ const XrCompositionLayerQuad* VirtualMonitor::GetCompositionLayer(
         }
     }
 
-    if (hasFrame) bridge_->ReleaseCurrentBuffer();
-    if (!swapchain_->IsImageBound(imageIndex)) {
+    bool hasRenderableImage = swapchain_->IsImageBound(imageIndex);
+    if (hasHardwareFrame) {
+        bridge_->ReleaseCurrentBuffer();
+        hasRenderableImage = true;
+    }
+
+    if (!hasRenderableImage) {
+        std::vector<uint8_t> softwareFrame;
+        {
+            std::lock_guard<std::mutex> lock(softwareFrameMutex_);
+            if (softwareFrameReady_) {
+                softwareFrame = softwareFrameRgba_;
+            }
+        }
+
+        if (!softwareFrame.empty() &&
+            swapchain_->UploadRgbaFrame(imageIndex, softwareFrame.data(), softwareFrame.size())) {
+            hasRenderableImage = true;
+            if (!firstSoftwareFrameLogged_) {
+                LOGI("VirtualMonitor[%u]: first software frame uploaded to swapchain slot %u",
+                     monitorIndex_, imageIndex);
+                firstSoftwareFrameLogged_ = true;
+            }
+        }
+    }
+
+    if (!hasRenderableImage) {
         swapchain_->ReleaseImage();
         return nullptr;
     }

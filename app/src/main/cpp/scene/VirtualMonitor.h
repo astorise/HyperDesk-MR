@@ -43,6 +43,10 @@ public:
     // The async OnInputAvailable callback will drain the internal queue.
     void SubmitFrame(const uint8_t* data, size_t size, int64_t presentationTimeUs);
 
+    // Software fallback for GDI-decoded desktop frames.
+    void SubmitSoftwareFrame(const uint8_t* bgra, uint32_t srcWidth, uint32_t srcHeight,
+                             uint32_t srcStride);
+
     // Acquire the latest decoded frame, advance the swapchain, and populate the
     // composition layer descriptor.  Returns nullptr if the decoder is stopped,
     // the swapchain cannot be acquired, or InitXr() has not been called.
@@ -70,6 +74,11 @@ private:
 
     XrCompositionLayerQuad  compositionLayer_{};
     bool                    firstBoundFrameLogged_ = false;
+    bool                    firstSoftwareFrameLogged_ = false;
+
+    std::mutex              softwareFrameMutex_;
+    std::vector<uint8_t>    softwareFrameRgba_;
+    bool                    softwareFrameReady_ = false;
 
     // ── Async codec state ─────────────────────────────────────────────────────
     // Invariant: at most one side has data.
