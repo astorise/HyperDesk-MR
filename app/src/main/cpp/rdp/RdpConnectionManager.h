@@ -102,5 +102,6 @@ private:
     // Maps surfaceId % kMaxMonitors → monitor array index.
     // Populated by OnGfxSurfaceCreated; UINT32_MAX means unmapped.
     uint32_t surfaceToMonitor_[kMaxMonitors]{};
+    uint32_t monitorFrameCount_[kMaxMonitors]{};
     uint32_t nextMonitorIdx_ = 0;
 };

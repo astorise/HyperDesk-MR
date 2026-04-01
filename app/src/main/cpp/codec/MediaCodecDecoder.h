@@ -33,11 +33,13 @@ public:
     // In async mode SubmitFrame() must not be used; input is fed from the callback.
     void EnableAsyncCallbacks(const AMediaCodecOnAsyncNotifyCallback& cb, void* userdata);
 
-    // Pause/resume codec to save GPU cycles (called by FrustumCuller).
+    // Pause/resume visibility without stopping the underlying codec.
+    // Stopping and restarting Android's decoder proved unsafe on Quest and
+    // could permanently kill the monitor until a full reconnect.
     void Pause();
     void Resume();
 
-    bool IsRunning()    const { return running_; }
+    bool IsRunning()    const { return running_ && !paused_; }
     bool IsConfigured() const { return configured_; }
 
     // Raw codec handle — exposed for async callback paths that need to feed buffers.
@@ -49,6 +51,7 @@ private:
     AMediaCodec*   codec_          = nullptr;
     bool           running_        = false;
     bool           configured_     = false;
+    bool           paused_         = false;
 
     bool                            useAsync_      = false;
     AMediaCodecOnAsyncNotifyCallback asyncCb_{};

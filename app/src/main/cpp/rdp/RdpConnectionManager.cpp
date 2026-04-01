@@ -33,6 +33,7 @@ RdpConnectionManager::RdpConnectionManager(RdpDisplayControl& displayControl,
     uint32_t count = std::min(monitorCount, kMaxMonitors);
     for (uint32_t i = 0; i < count; ++i) monitors_[i] = monitors[i];
     std::fill(std::begin(surfaceToMonitor_), std::end(surfaceToMonitor_), UINT32_MAX);
+    std::fill(std::begin(monitorFrameCount_), std::end(monitorFrameCount_), 0u);
 }
 
 RdpConnectionManager::~RdpConnectionManager() {
@@ -319,6 +320,11 @@ void RdpConnectionManager::OnGfxSurface(uint32_t surfaceId, const uint8_t* data,
     if (!monitor) {
         LOGW("RDP: OnGfxSurface: null monitor at index %u for surfaceId=%u", monitorIdx, surfaceId);
         return;
+    }
+
+    uint32_t frameCount = ++monitorFrameCount_[monitorIdx];
+    if (frameCount == 1) {
+        ScreenLog("[OK] monitor[%u] first H264 frame (%zu bytes)", monitorIdx, size);
     }
 
     // Task 8: AMediaCodec_dequeueInputBuffer is invoked inside SubmitFrame via
