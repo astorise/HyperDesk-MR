@@ -4,6 +4,7 @@
 #include "../util/Logger.h"
 #include "../xr/StatusOverlay.h"
 
+#include <freerdp/client.h>
 #include <freerdp/channels/channels.h>
 #include <freerdp/gdi/gdi.h>
 #include <winpr/synch.h>
@@ -48,22 +49,39 @@ void RdpConnectionManager::SetErrorCallback(ErrorCallback cb) {
 // ── Connect ───────────────────────────────────────────────────────────────────
 
 bool RdpConnectionManager::Connect(const ConnectionParams& params) {
-    instance_ = freerdp_new();
-    if (!instance_) {
-        LOGE("freerdp_new() failed");
+    if (instance_ || context_) {
+        LOGW("RDP: Connect called while a session object already exists");
         return false;
     }
 
-    // Allocate extended context.
-    instance_->ContextSize = sizeof(HyperDeskRdpContext);
-    if (!freerdp_context_new(instance_)) {
-        LOGE("freerdp_context_new() failed");
-        freerdp_free(instance_);
+    stopFlag_.store(false);
+    connected_.store(false);
+    lastError_.store(0);
+    nextMonitorIdx_ = 0;
+    std::fill(std::begin(surfaceToMonitor_), std::end(surfaceToMonitor_), UINT32_MAX);
+    std::fill(std::begin(monitorFrameCount_), std::end(monitorFrameCount_), 0u);
+
+    RDP_CLIENT_ENTRY_POINTS entryPoints{};
+    entryPoints.Size        = sizeof(entryPoints);
+    entryPoints.Version     = RDP_CLIENT_INTERFACE_VERSION;
+    entryPoints.ContextSize = sizeof(HyperDeskRdpContext);
+
+    rdpContext* baseContext = freerdp_client_context_new(&entryPoints);
+    if (!baseContext) {
+        LOGE("freerdp_client_context_new() failed");
+        return false;
+    }
+
+    instance_ = freerdp_client_get_instance(baseContext);
+    context_  = reinterpret_cast<HyperDeskRdpContext*>(baseContext);
+    if (!instance_ || !instance_->context) {
+        LOGE("freerdp_client_get_instance() returned null");
+        freerdp_client_context_free(baseContext);
         instance_ = nullptr;
+        context_  = nullptr;
         return false;
     }
 
-    context_       = reinterpret_cast<HyperDeskRdpContext*>(instance_->context);
     context_->self = this;
     context_->disp = nullptr;
     context_->gfx  = nullptr;
@@ -74,9 +92,9 @@ bool RdpConnectionManager::Connect(const ConnectionParams& params) {
     instance_->PostDisconnect   = OnPostDisconnect;
 
     // Register channel connect callback via PubSub (FreeRDP 3.x).
-    PubSub_SubscribeChannelConnected(instance_->context->pubSub, OnChannelsConnected);
+    PubSub_SubscribeChannelConnected(baseContext->pubSub, OnChannelsConnected);
 
-    SetupSettings(instance_->context->settings, params);
+    SetupSettings(baseContext->settings, params);
 
     // Run FreeRDP event loop on a dedicated thread.
     rdpThread_ = std::thread([this]() { RunEventLoop(); });
@@ -167,9 +185,9 @@ void RdpConnectionManager::RunEventLoop() {
 void RdpConnectionManager::Disconnect() {
     stopFlag_.store(true);
     if (rdpThread_.joinable()) rdpThread_.join();
-    if (instance_) {
-        freerdp_context_free(instance_);
-        freerdp_free(instance_);
+    connected_.store(false);
+    if (context_) {
+        freerdp_client_context_free(reinterpret_cast<rdpContext*>(context_));
         instance_ = nullptr;
         context_  = nullptr;
     }
@@ -241,6 +259,8 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
         } else {
             ScreenLog("[WARN] GFX channel not available");
         }
+    } else {
+        freerdp_client_OnChannelConnectedEventHandler(context, e);
     }
 }
 
