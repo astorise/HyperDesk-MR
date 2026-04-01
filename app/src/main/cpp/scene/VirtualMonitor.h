@@ -68,8 +68,8 @@ private:
     std::unique_ptr<MediaCodecDecoder>  decoder_;
     std::unique_ptr<HdSwapchain>        swapchain_;
 
-    bool                    slotBound_ = false;
     XrCompositionLayerQuad  compositionLayer_{};
+    bool                    firstBoundFrameLogged_ = false;
 
     // ── Async codec state ─────────────────────────────────────────────────────
     // Invariant: at most one side has data.

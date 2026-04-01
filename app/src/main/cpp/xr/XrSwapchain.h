@@ -24,6 +24,7 @@ public:
     bool AcquireImage(uint32_t& imageIndex);
     bool WaitImage();
     bool ReleaseImage();
+    bool IsImageBound(uint32_t imageIndex) const;
 
     // Bind an AHardwareBuffer as the backing memory for swapchain image slot [imageIndex].
     // Called once per slot during setup (Task 7).

@@ -58,6 +58,11 @@ bool HdSwapchain::ReleaseImage() {
     return XR_SUCCEEDED(xrReleaseSwapchainImage(swapchain_, &releaseInfo));
 }
 
+bool HdSwapchain::IsImageBound(uint32_t imageIndex) const {
+    return imageIndex < slotMemory_.size() &&
+           slotMemory_[imageIndex].memory != VK_NULL_HANDLE;
+}
+
 void HdSwapchain::BindExternalHardwareBuffer(uint32_t imageIndex, AHardwareBuffer* ahb) {
     VkDevice         dev   = ctx_.GetVkDevice();
     VkPhysicalDevice phys  = ctx_.GetVkPhysDevice();

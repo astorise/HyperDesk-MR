@@ -105,17 +105,27 @@ const XrCompositionLayerQuad* VirtualMonitor::GetCompositionLayer(
     if (!swapchain_->AcquireImage(imageIndex)) return nullptr;
     if (!swapchain_->WaitImage())               return nullptr;
 
-    // Bind the AHardwareBuffer as Vulkan external memory on first use.
-    if (hasFrame && !slotBound_) {
+    // Rebind the current swapchain slot to the latest decoder buffer.
+    // OpenXR rotates swapchain images, so binding a single slot once leaves
+    // the remaining images transparent/invisible.
+    if (hasFrame) {
         swapchain_->BindExternalHardwareBuffer(imageIndex, ahb);
-        slotBound_ = true;
+        if (!firstBoundFrameLogged_) {
+            LOGI("VirtualMonitor[%u]: first GPU frame bound to swapchain slot %u",
+                 monitorIndex_, imageIndex);
+            firstBoundFrameLogged_ = true;
+        }
     }
 
     if (hasFrame) bridge_->ReleaseCurrentBuffer();
+    if (!swapchain_->IsImageBound(imageIndex)) {
+        swapchain_->ReleaseImage();
+        return nullptr;
+    }
 
     // Task 10 — populate XrCompositionLayerQuad with non-null swapchain reference.
     compositionLayer_                = XrCompositionLayerQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
-    compositionLayer_.layerFlags     = XR_COMPOSITION_LAYER_BLEND_TEXTURE_SOURCE_ALPHA_BIT;
+    compositionLayer_.layerFlags     = 0;
     compositionLayer_.space          = worldSpace;
     compositionLayer_.eyeVisibility  = XR_EYE_VISIBILITY_BOTH;
     compositionLayer_.subImage       = swapchain_->GetSubImage();

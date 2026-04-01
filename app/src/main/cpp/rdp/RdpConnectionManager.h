@@ -72,14 +72,22 @@ public:
                                     const RDPGFX_SURFACE_COMMAND* cmd);
     static UINT OnGfxSurfaceCreated(RdpgfxClientContext* gfx,
                                     const RDPGFX_CREATE_SURFACE_PDU* pdu);
+    static UINT OnGfxDeleteSurface(RdpgfxClientContext* gfx,
+                                   const RDPGFX_DELETE_SURFACE_PDU* pdu);
+    static UINT OnGfxResetGraphics(RdpgfxClientContext* gfx,
+                                   const RDPGFX_RESET_GRAPHICS_PDU* pdu);
     static UINT OnGfxStartFrame(RdpgfxClientContext* gfx,
                                 const RDPGFX_START_FRAME_PDU* pdu);
     static UINT OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
                                      const RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU* pdu);
+    static UINT OnGfxSurfaceToScaledOutput(RdpgfxClientContext* gfx,
+                                           const RDPGFX_MAP_SURFACE_TO_SCALED_OUTPUT_PDU* pdu);
     static UINT OnGfxEndFrame(RdpgfxClientContext* gfx,
                               const RDPGFX_END_FRAME_PDU* pdu);
 
 private:
+    static RdpConnectionManager* GetSelfFromGfx(RdpgfxClientContext* gfx);
+
     RdpDisplayControl&   displayControl_;
     freerdp*             instance_  = nullptr;
     HyperDeskRdpContext* context_   = nullptr;
@@ -99,9 +107,27 @@ private:
     VirtualMonitor* monitors_[kMaxMonitors]{};
     uint32_t        monitorCount_ = 0;
 
-    // Maps surfaceId % kMaxMonitors → monitor array index.
-    // Populated by OnGfxSurfaceCreated; UINT32_MAX means unmapped.
+    // Maps exact RDP surface IDs to monitor array indices.
+    // A small fixed table is sufficient because the app only exposes 16 monitors.
+    uint32_t surfaceIds_[kMaxMonitors]{};
     uint32_t surfaceToMonitor_[kMaxMonitors]{};
     uint32_t monitorFrameCount_[kMaxMonitors]{};
     uint32_t nextMonitorIdx_ = 0;
+
+    using GfxCreateSurfaceCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_CREATE_SURFACE_PDU*);
+    using GfxDeleteSurfaceCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_DELETE_SURFACE_PDU*);
+    using GfxResetGraphicsCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_RESET_GRAPHICS_PDU*);
+    using GfxMapSurfaceToOutputCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU*);
+    using GfxMapSurfaceToScaledOutputCallback =
+        UINT (*)(RdpgfxClientContext*, const RDPGFX_MAP_SURFACE_TO_SCALED_OUTPUT_PDU*);
+
+    GfxCreateSurfaceCallback          prevCreateSurface_ = nullptr;
+    GfxDeleteSurfaceCallback          prevDeleteSurface_ = nullptr;
+    GfxResetGraphicsCallback          prevResetGraphics_ = nullptr;
+    GfxMapSurfaceToOutputCallback     prevMapSurfaceToOutput_ = nullptr;
+    GfxMapSurfaceToScaledOutputCallback prevMapSurfaceToScaledOutput_ = nullptr;
 };

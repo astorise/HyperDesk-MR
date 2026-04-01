@@ -33,6 +33,7 @@ RdpConnectionManager::RdpConnectionManager(RdpDisplayControl& displayControl,
       monitorCount_(std::min(monitorCount, kMaxMonitors)) {
     uint32_t count = std::min(monitorCount, kMaxMonitors);
     for (uint32_t i = 0; i < count; ++i) monitors_[i] = monitors[i];
+    std::fill(std::begin(surfaceIds_), std::end(surfaceIds_), UINT32_MAX);
     std::fill(std::begin(surfaceToMonitor_), std::end(surfaceToMonitor_), UINT32_MAX);
     std::fill(std::begin(monitorFrameCount_), std::end(monitorFrameCount_), 0u);
 }
@@ -58,6 +59,7 @@ bool RdpConnectionManager::Connect(const ConnectionParams& params) {
     connected_.store(false);
     lastError_.store(0);
     nextMonitorIdx_ = 0;
+    std::fill(std::begin(surfaceIds_), std::end(surfaceIds_), UINT32_MAX);
     std::fill(std::begin(surfaceToMonitor_), std::end(surfaceToMonitor_), UINT32_MAX);
     std::fill(std::begin(monitorFrameCount_), std::end(monitorFrameCount_), 0u);
 
@@ -191,9 +193,24 @@ void RdpConnectionManager::Disconnect() {
         instance_ = nullptr;
         context_  = nullptr;
     }
+    prevCreateSurface_ = nullptr;
+    prevDeleteSurface_ = nullptr;
+    prevResetGraphics_ = nullptr;
+    prevMapSurfaceToOutput_ = nullptr;
+    prevMapSurfaceToScaledOutput_ = nullptr;
 }
 
 // ── Static callbacks ──────────────────────────────────────────────────────────
+
+RdpConnectionManager* RdpConnectionManager::GetSelfFromGfx(RdpgfxClientContext* gfx) {
+    if (!gfx || !gfx->custom) return nullptr;
+
+    auto* gdi = static_cast<rdpGdi*>(gfx->custom);
+    if (!gdi || !gdi->context) return nullptr;
+
+    auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(gdi->context);
+    return ctx ? ctx->self : nullptr;
+}
 
 static BOOL OnBeginPaint(rdpContext* /*context*/) { return TRUE; }
 static BOOL OnEndPaint(rdpContext* /*context*/)   { return TRUE; }
@@ -237,6 +254,9 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
 
     RdpConnectionManager* self = ctx->self;
 
+    // Let FreeRDP's common client bootstrap the dynamic channel first.
+    freerdp_client_OnChannelConnectedEventHandler(context, e);
+
     ScreenLog("[OK] Channel: %s", e->name);
 
     if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
@@ -248,19 +268,33 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
     } else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         ctx->gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
         if (ctx->gfx) {
+            if (!ctx->gfx->custom && rdpCtx->gdi) {
+                ctx->gfx->custom = rdpCtx->gdi;
+            }
+            self->prevResetGraphics_ = ctx->gfx->ResetGraphics;
+            self->prevCreateSurface_ = ctx->gfx->CreateSurface;
+            self->prevDeleteSurface_ = ctx->gfx->DeleteSurface;
+            self->prevMapSurfaceToOutput_ = ctx->gfx->MapSurfaceToOutput;
+            self->prevMapSurfaceToScaledOutput_ = ctx->gfx->MapSurfaceToScaledOutput;
+
             ScreenLog("[OK] GFX pipeline ready (H.264)");
-            ctx->gfx->CapsAdvertise      = OnGfxCapsAdvertise;
-            ctx->gfx->SurfaceCommand     = OnGfxSurfaceCommand;
-            ctx->gfx->CreateSurface      = OnGfxSurfaceCreated;
-            ctx->gfx->StartFrame         = OnGfxStartFrame;
-            ctx->gfx->MapSurfaceToOutput = OnGfxSurfaceToOutput;
-            ctx->gfx->EndFrame           = OnGfxEndFrame;
-            ctx->gfx->custom             = self;
+            if (ctx->gfx->custom) {
+                ScreenLog("[OK] GFX common bootstrap ready");
+            } else {
+                ScreenLog("[WARN] GFX common bootstrap missing");
+            }
+            ctx->gfx->CapsAdvertise            = OnGfxCapsAdvertise;
+            ctx->gfx->ResetGraphics            = OnGfxResetGraphics;
+            ctx->gfx->SurfaceCommand           = OnGfxSurfaceCommand;
+            ctx->gfx->CreateSurface            = OnGfxSurfaceCreated;
+            ctx->gfx->DeleteSurface            = OnGfxDeleteSurface;
+            ctx->gfx->StartFrame               = OnGfxStartFrame;
+            ctx->gfx->MapSurfaceToOutput       = OnGfxSurfaceToOutput;
+            ctx->gfx->MapSurfaceToScaledOutput = OnGfxSurfaceToScaledOutput;
+            ctx->gfx->EndFrame                 = OnGfxEndFrame;
         } else {
             ScreenLog("[WARN] GFX channel not available");
         }
-    } else {
-        freerdp_client_OnChannelConnectedEventHandler(context, e);
     }
 }
 
@@ -278,16 +312,22 @@ UINT RdpConnectionManager::OnGfxCapsAdvertise(RdpgfxClientContext* /*gfx*/,
 // Task 7: SurfaceCommand — extract the compressed H.264 payload and dispatch it.
 UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
                                                 const RDPGFX_SURFACE_COMMAND* cmd) {
-    if (cmd->codecId != RDPGFX_CODECID_AVC420 &&
-        cmd->codecId != RDPGFX_CODECID_AVC444) {
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !cmd) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    if (cmd->codecId != RDPGFX_CODECID_AVC420) {
+        if (cmd->codecId == RDPGFX_CODECID_AVC444 ||
+            cmd->codecId == RDPGFX_CODECID_AVC444v2) {
+            ScreenLog("[WARN] AVC444 stream unsupported on Quest path");
+        }
         return CHANNEL_RC_OK;
     }
-    auto* self = static_cast<RdpConnectionManager*>(gfx->custom);
 
     const auto* avc = static_cast<const RDPGFX_AVC420_BITMAP_STREAM*>(cmd->extra);
     if (!avc || avc->length == 0 || !avc->data) {
-        LOGW("RDP: GFX SurfaceCommand codecId=0x%04X: empty or null AVC stream, skipping",
-             cmd->codecId);
+        ScreenLog("[WARN] AVC420 stream missing data raw=%u", cmd->length);
         return CHANNEL_RC_OK;
     }
 
@@ -298,12 +338,97 @@ UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
 
 UINT RdpConnectionManager::OnGfxSurfaceCreated(RdpgfxClientContext* gfx,
                                                 const RDPGFX_CREATE_SURFACE_PDU* pdu) {
-    auto* self = static_cast<RdpConnectionManager*>(gfx->custom);
-    uint32_t slot       = pdu->surfaceId % kMaxMonitors;
-    uint32_t monitorIdx = self->nextMonitorIdx_++;
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !pdu) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    UINT rc = CHANNEL_RC_OK;
+    if (self->prevCreateSurface_) {
+        rc = self->prevCreateSurface_(gfx, pdu);
+        if (rc != CHANNEL_RC_OK) {
+            ScreenLog("[ERR] CreateSurface %u failed rc=%u", pdu->surfaceId, rc);
+            return rc;
+        }
+    }
+
+    int slot = -1;
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        if (self->surfaceIds_[i] == pdu->surfaceId) {
+            slot = static_cast<int>(i);
+            break;
+        }
+    }
+    if (slot < 0) {
+        for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+            if (self->surfaceIds_[i] == UINT32_MAX) {
+                slot = static_cast<int>(i);
+                break;
+            }
+        }
+    }
+    if (slot < 0) {
+        ScreenLog("[ERR] surface table full, dropping %u", pdu->surfaceId);
+        return rc;
+    }
+
+    uint32_t monitorIdx = UINT32_MAX;
+    if (self->surfaceToMonitor_[slot] != UINT32_MAX) {
+        monitorIdx = self->surfaceToMonitor_[slot];
+    } else if (self->nextMonitorIdx_ < self->monitorCount_) {
+        monitorIdx = self->nextMonitorIdx_++;
+    } else {
+        ScreenLog("[WARN] no free monitor slot for surface %u", pdu->surfaceId);
+        return rc;
+    }
+
+    self->surfaceIds_[slot] = pdu->surfaceId;
     self->surfaceToMonitor_[slot] = monitorIdx;
     ScreenLog("[OK] Surface %u -> monitor[%u] %ux%u",
               pdu->surfaceId, monitorIdx, pdu->width, pdu->height);
+    return rc;
+}
+
+UINT RdpConnectionManager::OnGfxDeleteSurface(RdpgfxClientContext* gfx,
+                                               const RDPGFX_DELETE_SURFACE_PDU* pdu) {
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !pdu) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        if (self->surfaceIds_[i] == pdu->surfaceId) {
+            self->surfaceIds_[i] = UINT32_MAX;
+            self->surfaceToMonitor_[i] = UINT32_MAX;
+            ScreenLog("[WARN] Surface %u deleted", pdu->surfaceId);
+            break;
+        }
+    }
+
+    if (self->prevDeleteSurface_) {
+        return self->prevDeleteSurface_(gfx, pdu);
+    }
+    return CHANNEL_RC_OK;
+}
+
+UINT RdpConnectionManager::OnGfxResetGraphics(RdpgfxClientContext* gfx,
+                                               const RDPGFX_RESET_GRAPHICS_PDU* pdu) {
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !pdu) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    std::fill(std::begin(self->surfaceIds_), std::end(self->surfaceIds_), UINT32_MAX);
+    std::fill(std::begin(self->surfaceToMonitor_), std::end(self->surfaceToMonitor_), UINT32_MAX);
+    std::fill(std::begin(self->monitorFrameCount_), std::end(self->monitorFrameCount_), 0u);
+    self->nextMonitorIdx_ = 0;
+
+    ScreenLog("[OK] ResetGraphics %ux%u monitors=%u",
+              pdu->width, pdu->height, pdu->monitorCount);
+
+    if (self->prevResetGraphics_) {
+        return self->prevResetGraphics_(gfx, pdu);
+    }
     return CHANNEL_RC_OK;
 }
 
@@ -314,9 +439,35 @@ UINT RdpConnectionManager::OnGfxStartFrame(RdpgfxClientContext* /*gfx*/,
 
 UINT RdpConnectionManager::OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
                                                   const RDPGFX_MAP_SURFACE_TO_OUTPUT_PDU* pdu) {
-    (void)gfx;
-    (void)pdu;
-    // Surface-to-output mapping recorded; actual frame data arrives via the codec callback.
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !pdu) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    ScreenLog("[OK] Surface %u @ (%d,%d)",
+              pdu->surfaceId, pdu->outputOriginX, pdu->outputOriginY);
+
+    if (self->prevMapSurfaceToOutput_) {
+        return self->prevMapSurfaceToOutput_(gfx, pdu);
+    }
+    return CHANNEL_RC_OK;
+}
+
+UINT RdpConnectionManager::OnGfxSurfaceToScaledOutput(
+        RdpgfxClientContext* gfx,
+        const RDPGFX_MAP_SURFACE_TO_SCALED_OUTPUT_PDU* pdu) {
+    auto* self = GetSelfFromGfx(gfx);
+    if (!self || !pdu) {
+        return ERROR_INTERNAL_ERROR;
+    }
+
+    ScreenLog("[OK] Surface %u scaled %ux%u @ (%d,%d)",
+              pdu->surfaceId, pdu->targetWidth, pdu->targetHeight,
+              pdu->outputOriginX, pdu->outputOriginY);
+
+    if (self->prevMapSurfaceToScaledOutput_) {
+        return self->prevMapSurfaceToScaledOutput_(gfx, pdu);
+    }
     return CHANNEL_RC_OK;
 }
 
@@ -328,11 +479,16 @@ UINT RdpConnectionManager::OnGfxEndFrame(RdpgfxClientContext* /*gfx*/,
 // Tasks 8-10: look up the VirtualMonitor for this surface and feed the NAL unit.
 void RdpConnectionManager::OnGfxSurface(uint32_t surfaceId, const uint8_t* data,
                                          size_t size, int64_t presentationTimeUs) {
-    uint32_t slot       = surfaceId % kMaxMonitors;
-    uint32_t monitorIdx = surfaceToMonitor_[slot];
+    uint32_t monitorIdx = UINT32_MAX;
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        if (surfaceIds_[i] == surfaceId) {
+            monitorIdx = surfaceToMonitor_[i];
+            break;
+        }
+    }
 
     if (monitorIdx == UINT32_MAX || monitorIdx >= monitorCount_) {
-        LOGW("RDP: OnGfxSurface: no monitor mapped for surfaceId=%u (slot=%u)", surfaceId, slot);
+        LOGW("RDP: OnGfxSurface: no monitor mapped for surfaceId=%u", surfaceId);
         return;
     }
 
