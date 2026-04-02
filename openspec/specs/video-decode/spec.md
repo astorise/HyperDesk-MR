@@ -1,8 +1,6 @@
 ## Purpose
 Decode RDP video streams using hardware-accelerated AMediaCodec and deliver decoded frames to the OpenXR swapchain via a zero-copy GPU path.
-
 ## Requirements
-
 ### Requirement: Video streams are decoded via hardware-accelerated AMediaCodec
 The application SHALL create one `AMediaCodec` instance per active monitor, configured for H.264/AVC decoding in low-latency mode using the device's hardware decoder.
 
@@ -60,3 +58,15 @@ The codebase SHALL include a `tests/RdpParserTests.cpp` file that uses Google Te
 #### Scenario: Parser handles a corrupted payload without crashing
 - **WHEN** `RdpParserTests` feeds a buffer with no valid start code to the NAL unit extractor
 - **THEN** the extractor returns zero NAL units and the test verifies this with `EXPECT_NO_FATAL_FAILURE`
+
+### Requirement: Hardware decoder allocation is deferred until scan handoff
+The application SHALL postpone `AMediaCodec`, `AImageReader`, and monitor output-surface allocation until after a valid QR code has been scanned and the camera has been stopped.
+
+#### Scenario: Startup phase does not allocate monitor decoders
+- **WHEN** the application is running the QR scan phase before a valid QR code has been accepted
+- **THEN** no per-monitor `AMediaCodec` instance or decoder output surface has been created yet
+
+#### Scenario: Decoder bootstrap begins only after camera shutdown
+- **WHEN** a valid QR code has been decoded and accepted
+- **THEN** the application stops camera capture before initializing monitor decoders for the RDP session
+

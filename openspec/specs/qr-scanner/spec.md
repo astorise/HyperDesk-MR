@@ -1,8 +1,6 @@
 ## Purpose
 QR code scanning system using Meta's camera access API and a C++ decoding library to parse RDP connection parameters from physical QR codes, enabling a scan-to-connect flow that replaces hardcoded credentials.
-
 ## Requirements
-
 ### Requirement: QR library is integrated into the build system
 A lightweight C++ QR decoding library (ZBar or ZXing-cpp) SHALL be added to `third_party/` and linked via `CMakeLists.txt`.
 
@@ -33,22 +31,22 @@ The scanner SHALL parse the decoded QR string as JSON with the format `{"h":"hos
 - **THEN** the scanner logs an error and does not trigger a connection
 
 ### Requirement: Scan-to-connect flow replaces hardcoded credentials
-The `main.cpp` SHALL remove hardcoded `ConnectionParams` and initialize a `QrScanner` loop that triggers `rdpManager->Connect()` via callback once a valid QR code is scanned.
+The `main.cpp` SHALL remove hardcoded `ConnectionParams`, start the QR scanner during application startup, and defer monitor video decoder initialization until a valid QR code is scanned. After a successful decode, the application SHALL stop camera capture, initialize the required video decoders lazily, and only then call `rdpManager->Connect()` via callback.
 
-#### Scenario: Connection is initiated after successful QR scan
-- **WHEN** the QR scanner decodes a valid connection JSON
-- **THEN** `rdpManager->Connect()` is called with the parsed parameters
+#### Scenario: Connection is initiated only after scan handoff completes
+- **WHEN** a QR code containing valid connection JSON is decoded
+- **THEN** the scanner callback stops the camera, initializes the video decoders, and only then calls `rdpManager->Connect()` with the parsed parameters
 
-#### Scenario: Scanner runs continuously until a valid QR is found
-- **WHEN** the app launches and no QR code has been scanned yet
-- **THEN** the scanner thread continues processing camera frames until a valid JSON QR code is detected
+#### Scenario: Scanner owns the startup phase until a valid QR is found
+- **WHEN** the app launches and no valid QR code has been scanned yet
+- **THEN** the scanner continues processing camera frames and the RDP video decoders remain uninitialized
 
 ### Requirement: Camera access is closed after connection
-The scanner SHALL stop camera frame acquisition after a successful connection to conserve battery.
+The scanner SHALL stop camera frame acquisition before RDP video decoder bootstrap begins so the Quest camera is no longer competing with monitor startup resources once connection handoff starts.
 
-#### Scenario: Camera is released post-connection
-- **WHEN** `rdpManager->Connect()` is triggered by a scanned QR code
-- **THEN** the camera access loop is stopped and camera resources are released
+#### Scenario: Camera is released before decoder bootstrap
+- **WHEN** `rdpManager->Connect()` is about to be triggered by a scanned QR code
+- **THEN** camera capture is stopped before video decoder initialization and before the network connection begins
 
 ### Requirement: Haptic feedback confirms successful QR scan
 The application SHALL trigger a haptic pulse on the controllers when a QR code is successfully decoded and parsed.
@@ -60,3 +58,4 @@ The application SHALL trigger a haptic pulse on the controllers when a QR code i
 #### Scenario: No haptic feedback on failed decode
 - **WHEN** a camera frame is processed but no valid QR code is detected
 - **THEN** no haptic feedback is triggered
+

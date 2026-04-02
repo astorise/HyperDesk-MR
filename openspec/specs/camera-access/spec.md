@@ -1,8 +1,6 @@
 ## Purpose
 Meta Quest 3 camera frame acquisition via the `XR_FB_camera_access` OpenXR extension with Android runtime permission handling, providing raw camera buffers for QR code scanning.
-
 ## Requirements
-
 ### Requirement: XR_FB_camera_access extension is requested at instance creation
 The application SHALL request the `XR_FB_camera_access` extension during `xrCreateInstance` to enable raw camera frame acquisition on Meta Quest 3.
 
@@ -34,3 +32,15 @@ The `AndroidManifest.xml` SHALL include `<uses-feature android:name="com.oculus.
 #### Scenario: Manifest contains passthrough declarations
 - **WHEN** the app is installed on the device
 - **THEN** the manifest declares the passthrough feature and scene permission
+
+### Requirement: Quest scanner uses a stable passthrough capture profile
+The application SHALL prefer the known-good Quest passthrough-facing camera configuration for QR scanning and SHALL acquire frames as `YUV_420_888` at a stable 640x480 profile before any RDP video decoder is created.
+
+#### Scenario: Scanner starts on the passthrough-friendly capture source
+- **WHEN** the QR scanner starts on Quest 3
+- **THEN** the camera session becomes active on the passthrough-friendly source and delivers frames suitable for QR decoding
+
+#### Scenario: Scan phase does not compete with monitor decoder startup
+- **WHEN** the QR scanner is active and no valid QR code has been accepted yet
+- **THEN** no per-monitor RDP video decoder has been initialized
+

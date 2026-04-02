@@ -1,6 +1,5 @@
-## Purpose
-Establish an RDP connection to a Windows host using FreeRDP and negotiate a 16-monitor display layout over the Display Control virtual channel.
-## Requirements
+## MODIFIED Requirements
+
 ### Requirement: Client connects to a Windows host via RDP using FreeRDP
 The application SHALL establish an RDP connection to a Windows host using the FreeRDP 3.x library compiled as a static library for Android, running its event loop on a dedicated network thread. Session settings SHALL be configured via `instance->context->settings` using the `freerdp_settings_set_*` API. The client SHALL install `BeginPaint`, `EndPaint`, and `DesktopResize` update callbacks before connect, SHALL call `gdi_init(instance, PIXEL_FORMAT_BGRA32)` after session establishment, and SHALL use `PubSub_SubscribeChannelConnected()` with a callback of signature `(void* context, const ChannelConnectedEventArgs* e)` for channel discovery. When the application overrides `rdpgfx` callbacks, it SHALL preserve and chain the existing client-common callbacks retrieved from `e->pInterface`.
 
@@ -23,30 +22,7 @@ The application SHALL open the `Microsoft::Windows::RDS::DisplayControl` virtual
 - **WHEN** the server advertises only one monitor, or the `disp` channel is unavailable when `ResetGraphics` is received
 - **THEN** the client activates a one-monitor degraded layout instead of leaving the monitor wall inactive
 
-### Requirement: Client advertises H.264/AVC codec support via the GFX CapsAdvertise callback
-The application SHALL implement the `CapsAdvertise` callback on `RdpgfxClientContext` to negotiate H.264 encoding with the server. The callback SHALL advertise `RDPGFX_CAPVERSION_10` (or the appropriate version covering AVC420/AVC444) so that the server selects H.264 as the surface compression format for all subsequent GFX surface commands.
-
-#### Scenario: CapsAdvertise callback negotiates H.264 encoding with the server
-- **WHEN** the GFX pipeline channel is established and the server solicits codec capability
-- **THEN** the `CapsAdvertise` callback fires, the client advertises `RDPGFX_CAPVERSION_10` (AVC420/AVC444), and the server confirms H.264 as the active compression format for GFX surface data
-
-### Requirement: Client sends a 4x4 monitor grid layout to the server
-The application SHALL send a monitor layout defining 16 logical monitors arranged in a 4 column × 4 row grid, each at 1920×1080 resolution, with non-overlapping pixel coordinates. The layout SHALL be sent via `DispClientContext::SendMonitorLayout(ctx, numMonitors, monitorsArray)`.
-
-#### Scenario: LAYOUT PDU defines 16 monitors in a 4x4 arrangement
-- **WHEN** the display control channel is ready and capability negotiation is complete
-- **THEN** `SendMonitorLayout` is called with 16 monitor entries whose `Left`, `Top`, `Width`, and `Height` fields describe a contiguous 4×4 grid with no gaps or overlaps
-
-### Requirement: 16-monitor layout coordinate calculation is covered by GTest unit tests
-The codebase SHALL include a `tests/DisplayManagerTests.cpp` file that uses Google Test to verify that the 4×4 monitor grid layout computation produces correct, non-overlapping pixel coordinates. Tests MUST verify that each of the 16 monitors has the expected `Left`, `Top`, `Width`, and `Height` values for a 1920×1080 grid, that no two monitor rectangles overlap, and that the total covered pixel area equals 16 × 1920 × 1080.
-
-#### Scenario: 4x4 grid layout generates 16 non-overlapping monitor rectangles
-- **WHEN** `DisplayManagerTests` invokes the layout computation with a 4-column × 4-row grid at 1920×1080 per monitor
-- **THEN** the resulting 16 entries have `Left` values cycling through 0, 1920, 3840, 5760 and `Top` values cycling through 0, 1080, 2160, 3240 with no overlapping rectangles
-
-#### Scenario: Total pixel coverage matches the expected area
-- **WHEN** `DisplayManagerTests` computes the union area of all 16 monitor rectangles
-- **THEN** the total equals exactly 33,177,600 pixels (16 × 1920 × 1080) with no gaps
+## ADDED Requirements
 
 ### Requirement: Degraded single-monitor presentation is centered in world space
 When only one monitor is active, monitor 0 SHALL be positioned directly in front of the user instead of inheriting the top-left position of the normal 4x4 wall.
@@ -54,4 +30,3 @@ When only one monitor is active, monitor 0 SHALL be positioned directly in front
 #### Scenario: Single-monitor fallback is centered
 - **WHEN** the effective active monitor count is reduced to one
 - **THEN** monitor 0 is presented at the centered world-space position for the user-facing fallback desktop
-
