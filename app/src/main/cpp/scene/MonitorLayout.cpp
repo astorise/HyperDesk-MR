@@ -121,6 +121,9 @@ void MonitorLayout::BuildDefaultLayout() {
 }
 
 void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
+    const bool hadPrimaryAnchor = hasPrimaryAnchor_;
+    const XrVector3f previousAnchorPosition = primaryAnchorPosition_;
+
     XrVector3f horizontalForward = HeadForward(headPose.orientation);
     horizontalForward.y = 0.0f;
     horizontalForward = Normalize(horizontalForward, {0.0f, 0.0f, -1.0f});
@@ -132,10 +135,16 @@ void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
 
     BuildDefaultLayout();
 
-    LOGI("MonitorLayout: primary anchored to scan heading at (%.2f, %.2f, %.2f)",
-         primaryAnchorPosition_.x,
-         primaryAnchorPosition_.y,
-         primaryAnchorPosition_.z);
+    const float dx = primaryAnchorPosition_.x - previousAnchorPosition.x;
+    const float dy = primaryAnchorPosition_.y - previousAnchorPosition.y;
+    const float dz = primaryAnchorPosition_.z - previousAnchorPosition.z;
+    const float moveSq = dx * dx + dy * dy + dz * dz;
+    if (!hadPrimaryAnchor || moveSq > 0.0025f) {
+        LOGI("MonitorLayout: primary anchored to scan heading at (%.2f, %.2f, %.2f)",
+             primaryAnchorPosition_.x,
+             primaryAnchorPosition_.y,
+             primaryAnchorPosition_.z);
+    }
 }
 
 const MonitorDescriptor& MonitorLayout::GetMonitor(uint32_t index) const {

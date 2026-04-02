@@ -44,7 +44,7 @@ struct AppState {
     std::unique_ptr<QrScanner>            qrScanner;
 
     std::mutex                            pendingLayoutAnchorMutex;
-    bool                                  pendingLayoutAnchorRequest = false;
+    uint32_t                              pendingLayoutAnchorFrames = 0;
 
     bool running       = true;
     bool sessionActive = false;
@@ -75,6 +75,7 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
 
 void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
+    static constexpr uint32_t kQrAnchorFrames = 30;
 
     // Register the JavaVM with WinPR so winpr_jni_attach_thread (used by
     // Unicode conversion, timezone, etc.) can attach to the JVM.
@@ -177,7 +178,7 @@ void android_main(android_app* app) {
             state.statusOverlay->AddLog(buf);
             {
                 std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
-                state.pendingLayoutAnchorRequest = true;
+                state.pendingLayoutAnchorFrames = kQrAnchorFrames;
             }
             state.statusOverlay->AddLog("Aligning screen wall to scan heading...");
             state.statusOverlay->AddLog("Stopping camera...");
@@ -236,23 +237,31 @@ void android_main(android_app* app) {
         bool shouldRender = state.xrContext->BeginFrame(frameState);
 
         if (shouldRender && state.sessionActive) {
-            bool anchorRequested = false;
+            uint32_t anchorFramesRemaining = 0;
             {
                 std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
-                anchorRequested = state.pendingLayoutAnchorRequest;
+                anchorFramesRemaining = state.pendingLayoutAnchorFrames;
             }
 
-            if (anchorRequested) {
+            if (anchorFramesRemaining > 0) {
                 XrPosef headPose{};
                 if (state.xrContext->LocateHeadPose(frameState.predictedDisplayTime, headPose)) {
+                    if (anchorFramesRemaining == kQrAnchorFrames) {
+                        LOGI("Applying QR wall anchor over %u XR frames", kQrAnchorFrames);
+                    }
                     state.monitorLayout->AnchorPrimaryToHeadPose(headPose);
                     {
                         std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
-                        state.pendingLayoutAnchorRequest = false;
+                        if (state.pendingLayoutAnchorFrames > 0) {
+                            --state.pendingLayoutAnchorFrames;
+                            if (state.pendingLayoutAnchorFrames == 0) {
+                                LOGI("QR wall anchor locked");
+                                state.statusOverlay->AddLog("[OK] Screen wall anchor locked");
+                            }
+                        }
                     }
-                    state.statusOverlay->AddLog("[OK] Screen wall aligned to current heading");
                 } else {
-                    state.statusOverlay->AddLog("[WARN] Head pose unavailable, retrying alignment");
+                    LOGW("Head pose unavailable while anchoring QR wall");
                 }
             }
 
