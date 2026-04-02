@@ -21,6 +21,7 @@ XrContext::XrContext(android_app* app) : app_(app) {}
 XrContext::~XrContext() {
     if (hapticAction_     != XR_NULL_HANDLE) xrDestroyAction(hapticAction_);
     if (actionSet_        != XR_NULL_HANDLE) xrDestroyActionSet(actionSet_);
+    if (viewSpace_        != XR_NULL_HANDLE) xrDestroySpace(viewSpace_);
     if (worldSpace_       != XR_NULL_HANDLE) xrDestroySpace(worldSpace_);
     if (passthroughLayer_ != XR_NULL_HANDLE) pfnDestroyPassthroughLayerFB_(passthroughLayer_);
     if (passthrough_      != XR_NULL_HANDLE) pfnDestroyPassthroughFB_(passthrough_);
@@ -380,10 +381,19 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
                 xrDestroySpace(worldSpace_);
                 worldSpace_ = XR_NULL_HANDLE;
             }
+            if (viewSpace_ != XR_NULL_HANDLE) {
+                xrDestroySpace(viewSpace_);
+                viewSpace_ = XR_NULL_HANDLE;
+            }
             XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
             spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
             spaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
             XR_CHECK(xrCreateReferenceSpace(session_, &spaceInfo, &worldSpace_));
+
+            XrReferenceSpaceCreateInfo viewSpaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+            viewSpaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+            viewSpaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
+            XR_CHECK(xrCreateReferenceSpace(session_, &viewSpaceInfo, &viewSpace_));
             break;
         }
         case XR_SESSION_STATE_FOCUSED:
@@ -392,6 +402,10 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
         case XR_SESSION_STATE_STOPPING:
             sessionRunning_ = false;
             sessionActive = false;
+            if (viewSpace_ != XR_NULL_HANDLE) {
+                xrDestroySpace(viewSpace_);
+                viewSpace_ = XR_NULL_HANDLE;
+            }
             if (worldSpace_ != XR_NULL_HANDLE) {
                 xrDestroySpace(worldSpace_);
                 worldSpace_ = XR_NULL_HANDLE;
@@ -452,6 +466,19 @@ bool XrContext::LocateViews(XrTime predictedTime, std::array<XrView, 2>& views) 
 }
 
 bool XrContext::LocateHeadPose(XrTime predictedTime, XrPosef& headPose) {
+    if (viewSpace_ != XR_NULL_HANDLE && worldSpace_ != XR_NULL_HANDLE) {
+        XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+        if (XR_SUCCEEDED(xrLocateSpace(viewSpace_, worldSpace_, predictedTime, &location))) {
+            const XrSpaceLocationFlags requiredFlags =
+                XR_SPACE_LOCATION_POSITION_VALID_BIT |
+                XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+            if ((location.locationFlags & requiredFlags) == requiredFlags) {
+                headPose = location.pose;
+                return true;
+            }
+        }
+    }
+
     std::array<XrView, 2> views{XrView{XR_TYPE_VIEW}, XrView{XR_TYPE_VIEW}};
     if (!LocateViews(predictedTime, views)) {
         return false;

@@ -67,6 +67,7 @@ private:
     XrSession            session_          = XR_NULL_HANDLE;
     XrSystemId           systemId_         = XR_NULL_SYSTEM_ID;
     XrSpace              worldSpace_       = XR_NULL_HANDLE;
+    XrSpace              viewSpace_        = XR_NULL_HANDLE;
     XrSessionState       sessionState_     = XR_SESSION_STATE_UNKNOWN;
     bool                 passthroughAvailable_ = false;
     bool                 cameraAccessAvailable_ = false;

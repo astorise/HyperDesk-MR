@@ -43,7 +43,15 @@ struct AppState {
     std::unique_ptr<StatusOverlay>        statusOverlay;
     std::unique_ptr<QrScanner>            qrScanner;
 
+    std::mutex                            latestHeadPoseMutex;
+    XrPosef                              latestHeadPose{{0.0f, 0.0f, 0.0f, 1.0f},
+                                                        {0.0f, 0.0f, 0.0f}};
+    bool                                 latestHeadPoseValid = false;
+
     std::mutex                            pendingLayoutAnchorMutex;
+    XrPosef                              pendingLayoutAnchorPose{{0.0f, 0.0f, 0.0f, 1.0f},
+                                                                 {0.0f, 0.0f, 0.0f}};
+    bool                                 pendingLayoutAnchorPoseValid = false;
     uint32_t                              pendingLayoutAnchorFrames = 0;
 
     bool running       = true;
@@ -176,9 +184,23 @@ void android_main(android_app* app) {
             snprintf(buf, sizeof(buf), "  user=%s domain=%s",
                      params.username.c_str(), params.domain.c_str());
             state.statusOverlay->AddLog(buf);
+            XrPosef scanHeadPose{};
+            bool haveScanHeadPose = false;
+            {
+                std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                haveScanHeadPose = state.latestHeadPoseValid;
+                scanHeadPose = state.latestHeadPose;
+            }
             {
                 std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
                 state.pendingLayoutAnchorFrames = kQrAnchorFrames;
+                state.pendingLayoutAnchorPose = scanHeadPose;
+                state.pendingLayoutAnchorPoseValid = haveScanHeadPose;
+            }
+            if (haveScanHeadPose) {
+                LOGI("Queued QR wall anchor from latest XR head pose snapshot");
+            } else {
+                LOGW("No latest XR head pose available at QR scan; waiting for render pose");
             }
             state.statusOverlay->AddLog("Aligning screen wall to scan heading...");
             state.statusOverlay->AddLog("Stopping camera...");
@@ -237,21 +259,41 @@ void android_main(android_app* app) {
         bool shouldRender = state.xrContext->BeginFrame(frameState);
 
         if (shouldRender && state.sessionActive) {
+            XrPosef currentHeadPose{};
+            const bool currentHeadPoseValid =
+                state.xrContext->LocateHeadPose(frameState.predictedDisplayTime, currentHeadPose);
+            if (currentHeadPoseValid) {
+                std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                state.latestHeadPose = currentHeadPose;
+                state.latestHeadPoseValid = true;
+            }
+
             uint32_t anchorFramesRemaining = 0;
+            XrPosef queuedAnchorPose{};
+            bool queuedAnchorPoseValid = false;
             {
                 std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
                 anchorFramesRemaining = state.pendingLayoutAnchorFrames;
+                queuedAnchorPose = state.pendingLayoutAnchorPose;
+                queuedAnchorPoseValid = state.pendingLayoutAnchorPoseValid;
             }
 
             if (anchorFramesRemaining > 0) {
-                XrPosef headPose{};
-                if (state.xrContext->LocateHeadPose(frameState.predictedDisplayTime, headPose)) {
+                XrPosef anchorPose = currentHeadPose;
+                bool anchorPoseValid = currentHeadPoseValid;
+                if (anchorFramesRemaining == kQrAnchorFrames && queuedAnchorPoseValid) {
+                    anchorPose = queuedAnchorPose;
+                    anchorPoseValid = true;
+                }
+
+                if (anchorPoseValid) {
                     if (anchorFramesRemaining == kQrAnchorFrames) {
                         LOGI("Applying QR wall anchor over %u XR frames", kQrAnchorFrames);
                     }
-                    state.monitorLayout->AnchorPrimaryToHeadPose(headPose);
+                    state.monitorLayout->AnchorPrimaryToHeadPose(anchorPose);
                     {
                         std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                        state.pendingLayoutAnchorPoseValid = false;
                         if (state.pendingLayoutAnchorFrames > 0) {
                             --state.pendingLayoutAnchorFrames;
                             if (state.pendingLayoutAnchorFrames == 0) {
