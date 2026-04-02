@@ -13,6 +13,7 @@
 #include "scene/FrustumCuller.h"
 #include "scene/VirtualMonitor.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdlib>
 #include <memory>
@@ -48,11 +49,14 @@ struct AppState {
                                                         {0.0f, 0.0f, 0.0f}};
     bool                                 latestHeadPoseValid = false;
 
-    std::mutex                            pendingLayoutAnchorMutex;
-    XrPosef                              pendingLayoutAnchorPose{{0.0f, 0.0f, 0.0f, 1.0f},
-                                                                 {0.0f, 0.0f, 0.0f}};
-    bool                                 pendingLayoutAnchorPoseValid = false;
-    uint32_t                              pendingLayoutAnchorFrames = 0;
+    std::mutex                           pendingLayoutAnchorMutex;
+    XrPosef                             lastLayoutAnchorPose{{0.0f, 0.0f, 0.0f, 1.0f},
+                                                             {0.0f, 0.0f, 0.0f}};
+    bool                                lastLayoutAnchorPoseValid = false;
+    XrPosef                             pendingLayoutAnchorPose{{0.0f, 0.0f, 0.0f, 1.0f},
+                                                                {0.0f, 0.0f, 0.0f}};
+    bool                                pendingLayoutAnchorPoseValid = false;
+    uint32_t                            pendingLayoutAnchorFrames = 0;
 
     bool running       = true;
     bool sessionActive = false;
@@ -84,6 +88,7 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
 void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
     static constexpr uint32_t kQrAnchorFrames = 30;
+    static constexpr uint32_t kLayoutRefreshAnchorFrames = 8;
 
     // Register the JavaVM with WinPR so winpr_jni_attach_thread (used by
     // Unicode conversion, timezone, etc.) can attach to the JVM.
@@ -123,6 +128,20 @@ void android_main(android_app* app) {
 
     // ── RDP subsystem ────────────────────────────────────────────────────────
     state.displayControl = std::make_unique<RdpDisplayControl>(*state.monitorLayout);
+    state.displayControl->SetMonitorConfigAppliedCallback(
+        [&state](uint32_t monitorCount) {
+            std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+            if (!state.lastLayoutAnchorPoseValid) {
+                return;
+            }
+
+            state.pendingLayoutAnchorPose = state.lastLayoutAnchorPose;
+            state.pendingLayoutAnchorPoseValid = true;
+            state.pendingLayoutAnchorFrames =
+                std::max(state.pendingLayoutAnchorFrames, kLayoutRefreshAnchorFrames);
+            LOGI("Queued wall re-anchor after display layout update (%u monitor(s))",
+                 monitorCount);
+        });
     state.rdpManager     = std::make_unique<RdpConnectionManager>(
         *state.displayControl,
         state.monitorPtrs.data(),
@@ -193,6 +212,8 @@ void android_main(android_app* app) {
             }
             {
                 std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                state.lastLayoutAnchorPose = scanHeadPose;
+                state.lastLayoutAnchorPoseValid = haveScanHeadPose;
                 state.pendingLayoutAnchorFrames = kQrAnchorFrames;
                 state.pendingLayoutAnchorPose = scanHeadPose;
                 state.pendingLayoutAnchorPoseValid = haveScanHeadPose;
@@ -292,10 +313,14 @@ void android_main(android_app* app) {
                 if (anchorPoseValid) {
                     if (anchorFramesRemaining == kQrAnchorFrames) {
                         LOGI("Applying QR wall anchor over %u XR frames", kQrAnchorFrames);
+                    } else if (anchorFramesRemaining == kLayoutRefreshAnchorFrames) {
+                        LOGI("Reapplying QR wall anchor after display reconfiguration");
                     }
                     state.monitorLayout->AnchorPrimaryToHeadPose(anchorPose);
                     {
                         std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                        state.lastLayoutAnchorPose = anchorPose;
+                        state.lastLayoutAnchorPoseValid = true;
                         state.pendingLayoutAnchorPoseValid = false;
                         if (state.pendingLayoutAnchorFrames > 0) {
                             --state.pendingLayoutAnchorFrames;

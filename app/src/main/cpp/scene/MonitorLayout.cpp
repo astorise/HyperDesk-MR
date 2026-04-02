@@ -180,7 +180,13 @@ void MonitorLayout::SetActiveCount(uint32_t count) {
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
         monitors_[i].active = (i < capped);
     }
-    LOGI("MonitorLayout: %u monitor(s) active", capped);
+    const XrVector3f& primaryPos = monitors_[0].worldPose.position;
+    LOGI("MonitorLayout: %u monitor(s) active primary=(%.2f, %.2f, %.2f) anchored=%d",
+         capped,
+         primaryPos.x,
+         primaryPos.y,
+         primaryPos.z,
+         hasPrimaryAnchor_ ? 1 : 0);
 }
 
 void MonitorLayout::SetAllActive() {

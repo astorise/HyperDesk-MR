@@ -12,6 +12,10 @@ static constexpr uint32_t kPhysHeightMm = 296;
 RdpDisplayControl::RdpDisplayControl(MonitorLayout& layout)
     : layout_(&layout) {}
 
+void RdpDisplayControl::SetMonitorConfigAppliedCallback(std::function<void(uint32_t)> callback) {
+    monitorConfigAppliedCallback_ = std::move(callback);
+}
+
 void RdpDisplayControl::Attach(DispClientContext* ctx) {
     ctx_         = ctx;
     ctx_->custom = this;  // store back-pointer for the static callback
@@ -78,6 +82,9 @@ UINT RdpDisplayControl::SendMonitorLayout(uint32_t monitorCount) {
 void RdpDisplayControl::ActivateMonitorCount(uint32_t monitorCount) {
     if (!layout_) return;
     layout_->SetActiveCount(monitorCount);
+    if (monitorConfigAppliedCallback_) {
+        monitorConfigAppliedCallback_(monitorCount);
+    }
 }
 
 std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT>

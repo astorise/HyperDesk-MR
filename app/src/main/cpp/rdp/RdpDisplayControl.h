@@ -3,6 +3,7 @@
 #include <freerdp/channels/disp.h>
 #include <freerdp/client/disp.h>
 #include <cstdint>
+#include <functional>
 #include <vector>
 
 class MonitorLayout;
@@ -24,6 +25,8 @@ public:
     // Fallback used when the server exposes fewer monitors or no disp channel.
     void ActivateMonitorCount(uint32_t monitorCount);
 
+    void SetMonitorConfigAppliedCallback(std::function<void(uint32_t)> callback);
+
     // ── FreeRDP C-style callback ───────────────────────────────────────────────
     // Registered on the DispClientContext.  FreeRDP passes the context pointer;
     // we recover `this` from ctx->custom.
@@ -36,6 +39,7 @@ private:
     MonitorLayout*     layout_      = nullptr;
     DispClientContext* ctx_         = nullptr;
     uint32_t           maxMonitors_ = 0;
+    std::function<void(uint32_t)> monitorConfigAppliedCallback_;
 
     std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> BuildLayoutPDU(uint32_t monitorCount) const;
 };
