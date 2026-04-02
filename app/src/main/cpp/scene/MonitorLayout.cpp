@@ -63,6 +63,17 @@ void MonitorLayout::BindSurface(uint32_t monitorIndex, uint32_t rdpSurfaceId) {
 
 void MonitorLayout::SetActiveCount(uint32_t count) {
     const uint32_t capped = std::min(count, kMaxMonitors);
+
+    // Rebuild canonical positions first so switching between degraded and full
+    // layouts never leaves monitors stranded in an older fallback placement.
+    BuildDefaultLayout();
+
+    // When the server exposes a single desktop, place it directly in front of
+    // the user instead of leaving monitor[0] in the top-left corner of the 4x4 grid.
+    if (capped == 1) {
+        monitors_[0].worldPose.position = {0.0f, 0.0f, kDepth};
+    }
+
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
         monitors_[i].active = (i < capped);
     }

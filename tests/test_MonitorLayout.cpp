@@ -132,6 +132,17 @@ TEST_F(MonitorLayoutTest, SetAllActive_MakesAllActive) {
     }
 }
 
+TEST_F(MonitorLayoutTest, SetActiveCount_OneMonitorRecentersPrimary) {
+    layout.SetActiveCount(1);
+
+    const auto& pos = layout.GetMonitor(0).worldPose.position;
+    EXPECT_NEAR(pos.x, 0.0f, kEps);
+    EXPECT_NEAR(pos.y, 0.0f, kEps);
+    EXPECT_NEAR(pos.z, kDepth, kEps);
+    EXPECT_TRUE(layout.GetMonitor(0).active);
+    EXPECT_FALSE(layout.GetMonitor(1).active);
+}
+
 TEST_F(MonitorLayoutTest, BindSurface_SetsSurfaceId) {
     layout.BindSurface(7, 42u);
     EXPECT_EQ(layout.GetMonitor(7).rdpSurfaceId, 42u);
