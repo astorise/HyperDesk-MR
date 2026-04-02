@@ -198,9 +198,12 @@ void android_main(android_app* app) {
                 state.pendingLayoutAnchorPoseValid = haveScanHeadPose;
             }
             if (haveScanHeadPose) {
+                state.monitorLayout->AnchorPrimaryToHeadPose(scanHeadPose);
                 LOGI("Queued QR wall anchor from latest XR head pose snapshot");
+                state.statusOverlay->AddLog("[OK] Screen wall anchored to scan");
             } else {
                 LOGW("No latest XR head pose available at QR scan; waiting for render pose");
+                state.statusOverlay->AddLog("[WARN] Waiting for XR pose to anchor wall");
             }
             state.statusOverlay->AddLog("Aligning screen wall to scan heading...");
             state.statusOverlay->AddLog("Stopping camera...");
