@@ -16,6 +16,7 @@
 #include <array>
 #include <cstdlib>
 #include <memory>
+#include <mutex>
 
 #ifdef __ANDROID__
 #include <jni.h>
@@ -41,6 +42,10 @@ struct AppState {
     std::unique_ptr<XrCompositor>         compositor;
     std::unique_ptr<StatusOverlay>        statusOverlay;
     std::unique_ptr<QrScanner>            qrScanner;
+
+    std::mutex                            pendingLayoutAnchorMutex;
+    XrPosef                               pendingLayoutAnchor{};
+    bool                                  hasPendingLayoutAnchor = false;
 
     bool running       = true;
     bool sessionActive = false;
@@ -171,6 +176,15 @@ void android_main(android_app* app) {
             snprintf(buf, sizeof(buf), "  user=%s domain=%s",
                      params.username.c_str(), params.domain.c_str());
             state.statusOverlay->AddLog(buf);
+            XrPosef headPose{};
+            if (state.compositor->TryGetLatestHeadPose(headPose)) {
+                std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                state.pendingLayoutAnchor = headPose;
+                state.hasPendingLayoutAnchor = true;
+                state.statusOverlay->AddLog("[OK] Screen wall aligned to scan heading");
+            } else {
+                state.statusOverlay->AddLog("[WARN] No head pose yet, keeping default layout");
+            }
             state.statusOverlay->AddLog("Stopping camera...");
             state.qrScanner->Stop();
 
@@ -222,6 +236,21 @@ void android_main(android_app* app) {
         // Must submit frames after xrBeginSession for the runtime to
         // transition through SYNCHRONIZED → VISIBLE → FOCUSED.
         if (!state.xrContext->IsSessionRunning()) continue;
+
+        XrPosef pendingAnchor{};
+        bool applyPendingAnchor = false;
+        {
+            std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+            if (state.hasPendingLayoutAnchor) {
+                pendingAnchor = state.pendingLayoutAnchor;
+                state.hasPendingLayoutAnchor = false;
+                applyPendingAnchor = true;
+            }
+        }
+
+        if (applyPendingAnchor) {
+            state.monitorLayout->AnchorPrimaryToHeadPose(pendingAnchor);
+        }
 
         XrFrameState frameState{XR_TYPE_FRAME_STATE};
         bool shouldRender = state.xrContext->BeginFrame(frameState);
