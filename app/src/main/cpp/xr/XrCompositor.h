@@ -4,7 +4,6 @@
 
 #include <array>
 #include <cstdint>
-#include <mutex>
 
 class XrContext;
 class XrPassthrough;
@@ -34,9 +33,6 @@ public:
     // Set an optional StatusOverlay to render between passthrough and monitors.
     void SetStatusOverlay(StatusOverlay* overlay) { statusOverlay_ = overlay; }
 
-    // Returns the most recent cyclopean head pose sampled during rendering.
-    bool TryGetLatestHeadPose(XrPosef& outPose) const;
-
 private:
     XrContext&                      ctx_;
     XrPassthrough&                  passthrough_;
@@ -47,8 +43,4 @@ private:
 
     // Reusable per-frame layer storage: passthrough + status overlay + 16 monitors.
     std::array<const XrCompositionLayerBaseHeader*, 18> layerPtrs_{};
-
-    mutable std::mutex headPoseMutex_;
-    XrPosef            latestHeadPose_{};
-    bool               hasLatestHeadPose_ = false;
 };

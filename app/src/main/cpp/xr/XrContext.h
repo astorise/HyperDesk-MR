@@ -36,6 +36,9 @@ public:
     // Enumerate stereo views for the predicted display time.
     bool LocateViews(XrTime predictedTime, std::array<XrView, 2>& views);
 
+    // Returns a cyclopean head pose for the predicted display time.
+    bool LocateHeadPose(XrTime predictedTime, XrPosef& headPose);
+
     // Fire a short haptic pulse on both controllers.
     void TriggerHapticPulse(float amplitude = 0.5f, int64_t durationNs = 100000000);
 

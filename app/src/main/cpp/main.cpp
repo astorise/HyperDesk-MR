@@ -44,8 +44,7 @@ struct AppState {
     std::unique_ptr<QrScanner>            qrScanner;
 
     std::mutex                            pendingLayoutAnchorMutex;
-    XrPosef                               pendingLayoutAnchor{};
-    bool                                  hasPendingLayoutAnchor = false;
+    bool                                  pendingLayoutAnchorRequest = false;
 
     bool running       = true;
     bool sessionActive = false;
@@ -176,15 +175,11 @@ void android_main(android_app* app) {
             snprintf(buf, sizeof(buf), "  user=%s domain=%s",
                      params.username.c_str(), params.domain.c_str());
             state.statusOverlay->AddLog(buf);
-            XrPosef headPose{};
-            if (state.compositor->TryGetLatestHeadPose(headPose)) {
+            {
                 std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
-                state.pendingLayoutAnchor = headPose;
-                state.hasPendingLayoutAnchor = true;
-                state.statusOverlay->AddLog("[OK] Screen wall aligned to scan heading");
-            } else {
-                state.statusOverlay->AddLog("[WARN] No head pose yet, keeping default layout");
+                state.pendingLayoutAnchorRequest = true;
             }
+            state.statusOverlay->AddLog("Aligning screen wall to scan heading...");
             state.statusOverlay->AddLog("Stopping camera...");
             state.qrScanner->Stop();
 
@@ -237,25 +232,30 @@ void android_main(android_app* app) {
         // transition through SYNCHRONIZED → VISIBLE → FOCUSED.
         if (!state.xrContext->IsSessionRunning()) continue;
 
-        XrPosef pendingAnchor{};
-        bool applyPendingAnchor = false;
-        {
-            std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
-            if (state.hasPendingLayoutAnchor) {
-                pendingAnchor = state.pendingLayoutAnchor;
-                state.hasPendingLayoutAnchor = false;
-                applyPendingAnchor = true;
-            }
-        }
-
-        if (applyPendingAnchor) {
-            state.monitorLayout->AnchorPrimaryToHeadPose(pendingAnchor);
-        }
-
         XrFrameState frameState{XR_TYPE_FRAME_STATE};
         bool shouldRender = state.xrContext->BeginFrame(frameState);
 
         if (shouldRender && state.sessionActive) {
+            bool anchorRequested = false;
+            {
+                std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                anchorRequested = state.pendingLayoutAnchorRequest;
+            }
+
+            if (anchorRequested) {
+                XrPosef headPose{};
+                if (state.xrContext->LocateHeadPose(frameState.predictedDisplayTime, headPose)) {
+                    state.monitorLayout->AnchorPrimaryToHeadPose(headPose);
+                    {
+                        std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                        state.pendingLayoutAnchorRequest = false;
+                    }
+                    state.statusOverlay->AddLog("[OK] Screen wall aligned to current heading");
+                } else {
+                    state.statusOverlay->AddLog("[WARN] Head pose unavailable, retrying alignment");
+                }
+            }
+
             state.xrContext->SyncActions();
             state.compositor->RenderFrame(frameState);
         } else {

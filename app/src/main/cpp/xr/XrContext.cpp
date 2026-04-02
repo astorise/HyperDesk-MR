@@ -7,6 +7,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <cstring>
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
@@ -448,4 +449,33 @@ bool XrContext::LocateViews(XrTime predictedTime, std::array<XrView, 2>& views) 
     uint32_t viewCount = 2;
     XR_CHECK(xrLocateViews(session_, &locateInfo, &viewState, viewCount, &viewCount, views.data()));
     return (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) != 0;
+}
+
+bool XrContext::LocateHeadPose(XrTime predictedTime, XrPosef& headPose) {
+    std::array<XrView, 2> views{XrView{XR_TYPE_VIEW}, XrView{XR_TYPE_VIEW}};
+    if (!LocateViews(predictedTime, views)) {
+        return false;
+    }
+
+    headPose.position = {
+        (views[0].pose.position.x + views[1].pose.position.x) * 0.5f,
+        (views[0].pose.position.y + views[1].pose.position.y) * 0.5f,
+        (views[0].pose.position.z + views[1].pose.position.z) * 0.5f
+    };
+
+    const XrQuaternionf q = views[0].pose.orientation;
+    const float lenSq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    if (lenSq <= 1e-6f) {
+        headPose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
+        return true;
+    }
+
+    const float invLen = 1.0f / std::sqrt(lenSq);
+    headPose.orientation = {
+        q.x * invLen,
+        q.y * invLen,
+        q.z * invLen,
+        q.w * invLen
+    };
+    return true;
 }
