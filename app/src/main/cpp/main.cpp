@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <mutex>
@@ -48,6 +49,11 @@ struct AppState {
     XrPosef                              latestHeadPose{{0.0f, 0.0f, 0.0f, 1.0f},
                                                         {0.0f, 0.0f, 0.0f}};
     bool                                 latestHeadPoseValid = false;
+    std::array<XrPosef, 2>               latestEyePoses{{
+                                            {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}},
+                                            {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}
+                                        }};
+    std::array<bool, 2>                  latestEyePosesValid{{false, false}};
 
     std::mutex                           pendingLayoutAnchorMutex;
     XrPosef                             lastLayoutAnchorPose{{0.0f, 0.0f, 0.0f, 1.0f},
@@ -203,27 +209,37 @@ void android_main(android_app* app) {
             snprintf(buf, sizeof(buf), "  user=%s domain=%s",
                      params.username.c_str(), params.domain.c_str());
             state.statusOverlay->AddLog(buf);
-            XrPosef scanHeadPose{};
-            bool haveScanHeadPose = false;
+            const uint8_t scanCameraPosition = state.qrScanner->GetActiveCameraPosition();
+            XrPosef scanAnchorPose{};
+            bool haveScanAnchorPose = false;
+            const char* scanAnchorSource = "xr-head";
             {
                 std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
-                haveScanHeadPose = state.latestHeadPoseValid;
-                scanHeadPose = state.latestHeadPose;
+                if (scanCameraPosition <= 1 && state.latestEyePosesValid[scanCameraPosition]) {
+                    scanAnchorPose = state.latestEyePoses[scanCameraPosition];
+                    haveScanAnchorPose = true;
+                    scanAnchorSource = (scanCameraPosition == 0) ? "qr-eye-left" : "qr-eye-right";
+                } else if (state.latestHeadPoseValid) {
+                    scanAnchorPose = state.latestHeadPose;
+                    haveScanAnchorPose = true;
+                }
             }
             {
                 std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
-                state.lastLayoutAnchorPose = scanHeadPose;
-                state.lastLayoutAnchorPoseValid = haveScanHeadPose;
+                state.lastLayoutAnchorPose = scanAnchorPose;
+                state.lastLayoutAnchorPoseValid = haveScanAnchorPose;
                 state.pendingLayoutAnchorFrames = kQrAnchorFrames;
-                state.pendingLayoutAnchorPose = scanHeadPose;
-                state.pendingLayoutAnchorPoseValid = haveScanHeadPose;
+                state.pendingLayoutAnchorPose = scanAnchorPose;
+                state.pendingLayoutAnchorPoseValid = haveScanAnchorPose;
             }
-            if (haveScanHeadPose) {
-                state.monitorLayout->AnchorPrimaryToHeadPose(scanHeadPose);
-                LOGI("Queued QR wall anchor from latest XR head pose snapshot");
+            if (haveScanAnchorPose) {
+                state.monitorLayout->AnchorPrimaryToHeadPose(scanAnchorPose);
+                LOGI("Queued QR wall anchor from %s (camera position=%u)",
+                     scanAnchorSource,
+                     static_cast<unsigned>(scanCameraPosition));
                 state.statusOverlay->AddLog("[OK] Screen wall anchored to scan");
             } else {
-                LOGW("No latest XR head pose available at QR scan; waiting for render pose");
+                LOGW("No latest XR pose available at QR scan; waiting for render pose");
                 state.statusOverlay->AddLog("[WARN] Waiting for XR pose to anchor wall");
             }
             state.statusOverlay->AddLog("Aligning screen wall to scan heading...");
@@ -286,10 +302,21 @@ void android_main(android_app* app) {
             XrPosef currentHeadPose{};
             const bool currentHeadPoseValid =
                 state.xrContext->LocateHeadPose(frameState.predictedDisplayTime, currentHeadPose);
-            if (currentHeadPoseValid) {
+            std::array<XrView, 2> currentViews{XrView{XR_TYPE_VIEW}, XrView{XR_TYPE_VIEW}};
+            const bool currentViewsValid =
+                state.xrContext->LocateViews(frameState.predictedDisplayTime, currentViews);
+            if (currentHeadPoseValid || currentViewsValid) {
                 std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
-                state.latestHeadPose = currentHeadPose;
-                state.latestHeadPoseValid = true;
+                if (currentHeadPoseValid) {
+                    state.latestHeadPose = currentHeadPose;
+                    state.latestHeadPoseValid = true;
+                }
+                if (currentViewsValid) {
+                    state.latestEyePoses[0] = currentViews[0].pose;
+                    state.latestEyePoses[1] = currentViews[1].pose;
+                    state.latestEyePosesValid[0] = true;
+                    state.latestEyePosesValid[1] = true;
+                }
             }
 
             uint32_t anchorFramesRemaining = 0;
