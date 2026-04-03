@@ -136,9 +136,65 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     // Accept self-signed RDP certificates without user prompt.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
 
-    // Desktop area: 3 monitors side-by-side at 1920x1080.
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920 * 3);
+    // Declare 3 monitors at connection time so Windows creates 3 virtual displays.
+    freerdp_settings_set_bool(settings, FreeRDP_UseMultimon, TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_ForceMultimon, TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_HasMonitorAttributes, TRUE);
+
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920);
     freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 1080);
+
+    // Allocate monitor array: monitor 0 = center (primary), 1 = left, 2 = right.
+    const uint32_t numMon = 3;
+    freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, numMon);
+    freerdp_settings_set_uint32(settings, FreeRDP_MonitorDefArraySize, numMon);
+
+    auto* monitors = freerdp_settings_get_pointer_writable(settings, FreeRDP_MonitorDefArray);
+    auto* monArray = static_cast<rdpMonitor*>(monitors);
+    if (monArray) {
+        // Monitor 0: center (primary) at x=1920
+        monArray[0] = {};
+        monArray[0].x          = 1920;
+        monArray[0].y          = 0;
+        monArray[0].width      = 1920;
+        monArray[0].height     = 1080;
+        monArray[0].is_primary = 1;
+        monArray[0].attributes.physicalWidth  = 527;
+        monArray[0].attributes.physicalHeight = 296;
+        monArray[0].attributes.orientation    = ORIENTATION_LANDSCAPE;
+        monArray[0].attributes.desktopScaleFactor = 100;
+        monArray[0].attributes.deviceScaleFactor  = 100;
+
+        // Monitor 1: left at x=0
+        monArray[1] = {};
+        monArray[1].x          = 0;
+        monArray[1].y          = 0;
+        monArray[1].width      = 1920;
+        monArray[1].height     = 1080;
+        monArray[1].is_primary = 0;
+        monArray[1].attributes.physicalWidth  = 527;
+        monArray[1].attributes.physicalHeight = 296;
+        monArray[1].attributes.orientation    = ORIENTATION_LANDSCAPE;
+        monArray[1].attributes.desktopScaleFactor = 100;
+        monArray[1].attributes.deviceScaleFactor  = 100;
+
+        // Monitor 2: right at x=3840
+        monArray[2] = {};
+        monArray[2].x          = 3840;
+        monArray[2].y          = 0;
+        monArray[2].width      = 1920;
+        monArray[2].height     = 1080;
+        monArray[2].is_primary = 0;
+        monArray[2].attributes.physicalWidth  = 527;
+        monArray[2].attributes.physicalHeight = 296;
+        monArray[2].attributes.orientation    = ORIENTATION_LANDSCAPE;
+        monArray[2].attributes.desktopScaleFactor = 100;
+        monArray[2].attributes.deviceScaleFactor  = 100;
+
+        LOGI("RDP: 3 monitors declared (left=0, center=1920, right=3840)");
+    } else {
+        LOGE("RDP: failed to get MonitorDefArray pointer");
+    }
 }
 
 // ── RunEventLoop ──────────────────────────────────────────────────────────────
