@@ -136,9 +136,9 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     // Accept self-signed RDP certificates without user prompt.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
 
-    // Set a large desktop area to accommodate 16 monitors at 1920x1080.
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920 * 4);
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 1080 * 4);
+    // Desktop area: 3 monitors side-by-side at 1920x1080.
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920 * 3);
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 1080);
 }
 
 // ── RunEventLoop ──────────────────────────────────────────────────────────────
@@ -387,8 +387,7 @@ UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
         self->softwareFramePending_ = true;
         if (!self->softwareFallbackLogged_) {
             self->softwareFallbackLogged_ = true;
-            self->displayControl_.ActivateMonitorCount(1);
-            ScreenLog("[WARN] software GFX fallback on monitor[0]");
+            ScreenLog("[WARN] software GFX fallback (non-H.264 codec)");
         }
 
         if (self->prevSurfaceCommand_) {
