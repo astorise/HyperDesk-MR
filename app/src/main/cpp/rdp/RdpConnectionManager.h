@@ -102,7 +102,7 @@ private:
     void SetupSettings(rdpSettings* settings, const ConnectionParams& params);
     void RunEventLoop();
 
-    static constexpr uint32_t kMaxMonitors = 16;
+    static constexpr uint32_t kMaxMonitors = 3;
 
     // VirtualMonitor pointers passed in at construction time.
     VirtualMonitor* monitors_[kMaxMonitors]{};

@@ -53,20 +53,16 @@ XrVector3f RotateVector(const XrQuaternionf& q, XrVector3f v) {
     return Add(v, Add(Scale(crossUV, 2.0f * s), Scale(crossUCrossUV, 2.0f)));
 }
 
+// Monitor 0 = center (primary), 1 = left, 2 = right.
 XrVector3f CanonicalPosition(uint32_t index) {
-    const float xStart = -static_cast<float>(MonitorLayout::kGridCols - 1) *
-                         MonitorLayout::kHSpacing / 2.0f;
-    const float yStart = static_cast<float>(MonitorLayout::kGridRows - 1) *
-                         MonitorLayout::kVSpacing / 2.0f;
-
-    const uint32_t col = index % MonitorLayout::kGridCols;
-    const uint32_t row = index / MonitorLayout::kGridCols;
-
-    return {
-        xStart + static_cast<float>(col) * MonitorLayout::kHSpacing,
-        yStart - static_cast<float>(row) * MonitorLayout::kVSpacing,
-        MonitorLayout::kDepth
-    };
+    float x;
+    switch (index) {
+        case 1:  x = -MonitorLayout::kHSpacing; break;  // left
+        case 0:  x =  0.0f;                     break;  // center (primary)
+        case 2:  x =  MonitorLayout::kHSpacing;  break;  // right
+        default: x =  0.0f;                     break;
+    }
+    return {x, 0.0f, MonitorLayout::kDepth};
 }
 
 XrVector3f HeadForward(const XrQuaternionf& q) {
@@ -91,29 +87,20 @@ MonitorLayout::MonitorLayout() {
 }
 
 void MonitorLayout::BuildDefaultLayout() {
-    const float xStart = -static_cast<float>(kGridCols - 1) * kHSpacing / 2.0f;
-    const float yStart = static_cast<float>(kGridRows - 1) * kVSpacing / 2.0f;
-
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
-        const uint32_t col = i % kGridCols;
-        const uint32_t row = i / kGridCols;
-
         MonitorDescriptor& m = monitors_[i];
         m.index = i;
 
-        const float x = xStart + static_cast<float>(col) * kHSpacing;
-        const float y = yStart - static_cast<float>(row) * kVSpacing;
-
+        const XrVector3f pos = CanonicalPosition(i);
         m.worldPose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
-        m.worldPose.position = {x, y, kDepth};
+        m.worldPose.position = pos;
         m.sizeMeters = {1.92f, 1.08f};
         m.forwardNormal = {0.0f, 0.0f, 1.0f};
     }
 
     ApplyPrimaryAnchor();
 
-    LOGI("MonitorLayout: 4x4 grid built - x=[%.2f, %.2f] y=[%.2f, %.2f] z=%.2f",
-         xStart, -xStart, -yStart, yStart, kDepth);
+    LOGI("MonitorLayout: 1x3 row built (left/center/right) z=%.2f", kDepth);
 }
 
 void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {

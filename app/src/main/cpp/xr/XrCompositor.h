@@ -5,6 +5,8 @@
 #include <array>
 #include <cstdint>
 
+#include "../scene/MonitorLayout.h"
+
 class XrContext;
 class XrPassthrough;
 class MonitorLayout;
@@ -23,7 +25,7 @@ public:
                  XrPassthrough&                   passthrough,
                  MonitorLayout&                   layout,
                  FrustumCuller&                   culler,
-                 std::array<VirtualMonitor*, 16>  monitors);
+                 std::array<VirtualMonitor*, MonitorLayout::kMaxMonitors>  monitors);
 
     ~XrCompositor();
 
@@ -38,9 +40,9 @@ private:
     XrPassthrough&                  passthrough_;
     MonitorLayout&                  layout_;
     FrustumCuller&                  culler_;
-    std::array<VirtualMonitor*, 16> monitors_;
+    std::array<VirtualMonitor*, MonitorLayout::kMaxMonitors> monitors_;
     StatusOverlay*                  statusOverlay_ = nullptr;
 
-    // Reusable per-frame layer storage: passthrough + status overlay + 16 monitors.
-    std::array<const XrCompositionLayerBaseHeader*, 18> layerPtrs_{};
+    // Reusable per-frame layer storage: passthrough + status overlay + monitors.
+    std::array<const XrCompositionLayerBaseHeader*, 2 + MonitorLayout::kMaxMonitors> layerPtrs_{};
 };

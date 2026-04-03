@@ -14,7 +14,7 @@ XrCompositor::XrCompositor(
     XrPassthrough&                   passthrough,
     MonitorLayout&                   layout,
     FrustumCuller&                   culler,
-    std::array<VirtualMonitor*, 16>  monitors)
+    std::array<VirtualMonitor*, MonitorLayout::kMaxMonitors>  monitors)
     : ctx_(ctx),
       passthrough_(passthrough),
       layout_(layout),
@@ -32,7 +32,7 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
         return;
     }
 
-    std::array<MediaCodecDecoder*, 16> decoders{};
+    std::array<MediaCodecDecoder*, MonitorLayout::kMaxMonitors> decoders{};
     for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
         decoders[i] = monitors_[i] ? monitors_[i]->GetDecoder() : nullptr;
     }

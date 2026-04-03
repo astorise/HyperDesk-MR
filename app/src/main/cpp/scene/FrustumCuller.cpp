@@ -36,7 +36,7 @@ FrustumCuller::CullResult FrustumCuller::TestMonitor(
 
 void FrustumCuller::UpdateAll(std::span<const XrView, 2> views,
                                const MonitorLayout& layout,
-                               std::array<MediaCodecDecoder*, 16>& decoders) {
+                               std::array<MediaCodecDecoder*, MonitorLayout::kMaxMonitors>& decoders) {
     XrVector3f eyePos{}, forward{};
     ComputeCyclopsView(views, eyePos, forward);
 

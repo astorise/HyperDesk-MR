@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <span>
 
-class MonitorLayout;
+#include "MonitorLayout.h"
 class MediaCodecDecoder;
 
 // FrustumCuller performs a per-frame dot-product visibility test for each of
@@ -33,7 +33,7 @@ public:
     // decoders may contain null entries (uninitialised slots are skipped).
     void UpdateAll(std::span<const XrView, 2> views,
                    const MonitorLayout& layout,
-                   std::array<MediaCodecDecoder*, 16>& decoders);
+                   std::array<MediaCodecDecoder*, MonitorLayout::kMaxMonitors>& decoders);
 
 private:
     // cos(halfFovDeg + slack) — precomputed in the constructor.
@@ -43,7 +43,7 @@ private:
     // Per-monitor countdown before an out-of-FOV monitor is actually paused.
     // Reset to kHysteresisFrames whenever the monitor is visible.
     static constexpr int kHysteresisFrames = 2;
-    int hysteresis_[16]{};
+    int hysteresis_[MonitorLayout::kMaxMonitors]{};
 
     // ── Math helpers ──────────────────────────────────────────────────────────
 
