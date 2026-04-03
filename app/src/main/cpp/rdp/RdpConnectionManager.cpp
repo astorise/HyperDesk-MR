@@ -622,20 +622,30 @@ void RdpConnectionManager::PushSoftwareFallbackFrame(RdpgfxClientContext* gfx) {
         return;
     }
 
-    VirtualMonitor* monitor = monitors_[0];
-    if (!monitor) {
-        ScreenLog("[ERR] monitor[0] unavailable for software fallback");
-        return;
-    }
+    const uint32_t gdiW = static_cast<uint32_t>(gdi->width);
+    const uint32_t gdiH = static_cast<uint32_t>(gdi->height);
+    const uint32_t stride = gdi->stride;
+    const uint32_t monW = 1920;
 
-    monitor->SubmitSoftwareFrame(gdi->primary_buffer,
-                                 static_cast<uint32_t>(gdi->width),
-                                 static_cast<uint32_t>(gdi->height),
-                                 gdi->stride);
+    // RDP desktop layout: monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840.
+    // Map each monitor to its horizontal crop region in the GDI buffer.
+    struct MonitorCrop { uint32_t idx; uint32_t offsetX; };
+    const MonitorCrop crops[] = {
+        {0, 1920},  // center (primary)
+        {1, 0},     // left
+        {2, 3840},  // right
+    };
 
-    if (++monitorFrameCount_[0] == 1) {
-        ScreenLog("[OK] monitor[0] first software GFX frame %ux%u",
-                  static_cast<uint32_t>(gdi->width),
-                  static_cast<uint32_t>(gdi->height));
+    for (const auto& crop : crops) {
+        if (crop.idx >= monitorCount_ || !monitors_[crop.idx]) continue;
+        if (crop.offsetX + monW > gdiW) continue;  // surface too narrow
+
+        const uint8_t* regionPtr = gdi->primary_buffer + static_cast<size_t>(crop.offsetX) * 4u;
+        monitors_[crop.idx]->SubmitSoftwareFrame(regionPtr, monW, gdiH, stride);
+
+        if (++monitorFrameCount_[crop.idx] == 1) {
+            ScreenLog("[OK] monitor[%u] first software GFX frame (crop x=%u %ux%u)",
+                      crop.idx, crop.offsetX, monW, gdiH);
+        }
     }
 }
