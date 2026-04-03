@@ -77,11 +77,13 @@ XrQuaternionf YawQuat(float yaw) {
 }
 
 // Yaw angle for each monitor on the decagonal arc.
-// Monitor 0 = center (0°), 1 = left (-36°), 2 = right (+36°).
+// Monitor 0 = center (0°), 1 = left (+36°), 2 = right (-36°).
+// Positive yaw rotates the screen's front face to the right (toward center
+// for the left screen), keeping all panels facing the viewer at the origin.
 float MonitorYaw(uint32_t index) {
     switch (index) {
-        case 1:  return -kDecagonStep;  // left
-        case 2:  return  kDecagonStep;  // right
+        case 1:  return  kDecagonStep;  // left
+        case 2:  return -kDecagonStep;  // right
         default: return  0.0f;          // center
     }
 }
