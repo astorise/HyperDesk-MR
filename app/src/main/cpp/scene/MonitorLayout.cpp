@@ -70,11 +70,7 @@ XrVector3f CanonicalPosition(uint32_t index) {
 }
 
 XrVector3f HeadForward(const XrQuaternionf& q) {
-    return {
-         2.0f * (q.x * q.z + q.w * q.y),
-         2.0f * (q.y * q.z - q.w * q.x),
-        -(1.0f - 2.0f * (q.x * q.x + q.y * q.y))
-    };
+    return RotateVector(q, {0.0f, 0.0f, -1.0f});
 }
 
 XrQuaternionf YawOnlyWallOrientation(XrVector3f horizontalForward) {
