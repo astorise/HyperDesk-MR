@@ -89,12 +89,14 @@ float MonitorYaw(uint32_t index) {
 }
 
 // Position on the decagonal arc (user is at the origin, screens face inward).
+// Position angle is the negative of the face yaw: the left screen sits at -X
+// but its face yaw is positive (rotated to face the viewer at center).
 XrVector3f CanonicalPosition(uint32_t index) {
-    const float yaw = MonitorYaw(index);
+    const float posAngle = -MonitorYaw(index);
     return {
-        kDecagonRadius * std::sin(yaw),
+        kDecagonRadius * std::sin(posAngle),
         0.0f,
-       -kDecagonRadius * std::cos(yaw)
+       -kDecagonRadius * std::cos(posAngle)
     };
 }
 
@@ -129,7 +131,7 @@ void MonitorLayout::BuildDefaultLayout() {
         m.worldPose.orientation = YawQuat(yaw);
         m.sizeMeters = {1.92f, 1.08f};
         // Normal points from screen toward the decagon center (the viewer).
-        m.forwardNormal = {std::sin(yaw), 0.0f, -std::cos(yaw)};
+        m.forwardNormal = {std::sin(yaw), 0.0f, std::cos(yaw)};
     }
 
     ApplyPrimaryAnchor();
