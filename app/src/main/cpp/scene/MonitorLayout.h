@@ -24,7 +24,7 @@ public:
     static constexpr uint32_t kGridRows = 1;
 
     // Physical spacing between monitor centers (meters).
-    static constexpr float kHSpacing = 1.55f;  // decagon R ≈ 2.5m
+    static constexpr float kHSpacing = 1.24f;  // decagon R ≈ 2.0m
     static constexpr float kVSpacing = 1.15f;  // 1.08m screen + 0.07m gap
 
     // Distance from the STAGE origin to the monitor plane (negative = in front).
