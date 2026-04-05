@@ -128,6 +128,11 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444,                   FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2,                 FALSE);
 
+    // Enable audio playback (rdpsnd channel via OpenSL ES backend).
+    freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback,  TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_AudioCapture,   FALSE);
+    freerdp_settings_set_string(settings, FreeRDP_AudioPlaybackDevice, "opensles");
+
     // Disable NLA — OpenSSL on Android lacks the LEGACY provider (MD4)
     // which NTLM password hashing requires.  Fall back to TLS security.
     freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, FALSE);
@@ -378,6 +383,8 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
             ScreenLog("[OK] Display control ready");
             self->displayControl_.Attach(ctx->disp);
         }
+    } else if (strcmp(e->name, "rdpsnd") == 0) {
+        ScreenLog("[OK] Audio (rdpsnd) channel ready");
     } else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         ctx->gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
         if (ctx->gfx) {
