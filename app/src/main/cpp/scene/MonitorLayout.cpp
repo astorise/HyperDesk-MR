@@ -13,8 +13,9 @@ namespace {
 constexpr float kSinPiOver10 = 0.30902f;
 // Angle between adjacent screen centers as seen from the decagon center.
 constexpr float kDecagonStep = 2.0f * static_cast<float>(M_PI) / 10.0f;  // 36°
-// Circumscribed radius so that adjacent screen centers are kHSpacing apart.
-constexpr float kDecagonRadius = MonitorLayout::kHSpacing / (2.0f * kSinPiOver10);  // ≈ 3.24m
+// Distance from the viewer to the screen plane (meters).
+// Previously derived from kHSpacing (~3.24m); halved for comfortable viewing.
+constexpr float kDecagonRadius = 1.6f;
 
 XrVector3f Add(XrVector3f a, XrVector3f b) {
     return {a.x + b.x, a.y + b.y, a.z + b.z};
@@ -129,7 +130,7 @@ void MonitorLayout::BuildDefaultLayout() {
         const float yaw = MonitorYaw(i);
         m.worldPose.position = CanonicalPosition(i);
         m.worldPose.orientation = YawQuat(yaw);
-        m.sizeMeters = {1.20f, 0.675f};  // 16:9, fits decagon R≈2.0m
+        m.sizeMeters = {1.92f, 1.08f};
         // Normal points from screen toward the decagon center (the viewer).
         m.forwardNormal = {std::sin(yaw), 0.0f, std::cos(yaw)};
     }
