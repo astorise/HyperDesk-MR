@@ -141,8 +141,8 @@ void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
     horizontalForward = Normalize(horizontalForward, {0.0f, 0.0f, -1.0f});
 
     primaryAnchorOrientation_ = YawOnlyWallOrientation(horizontalForward);
-    // Cylinder center is at the viewer, not projected forward.
-    primaryAnchorPosition_ = headPose.position;
+    // Cylinder center is 0.5m behind the viewer so screens feel further away.
+    primaryAnchorPosition_ = Add(headPose.position, Scale(horizontalForward, -0.5f));
     hasPrimaryAnchor_ = true;
 
     BuildDefaultLayout();
