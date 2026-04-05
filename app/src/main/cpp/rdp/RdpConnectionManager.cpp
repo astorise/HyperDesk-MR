@@ -128,10 +128,9 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444,                   FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2,                 FALSE);
 
-    // Enable audio playback (rdpsnd channel via OpenSL ES backend).
+    // Enable audio playback (rdpsnd channel — FreeRDP picks the opensles backend).
     freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback,  TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_AudioCapture,   FALSE);
-    freerdp_settings_set_string(settings, FreeRDP_AudioPlaybackDevice, "opensles");
 
     // Disable NLA — OpenSSL on Android lacks the LEGACY provider (MD4)
     // which NTLM password hashing requires.  Fall back to TLS security.
