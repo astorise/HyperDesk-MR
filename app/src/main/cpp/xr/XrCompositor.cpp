@@ -57,11 +57,11 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
             continue;
         }
 
-        // Cylinder layer: radius = viewing distance, centralAngle = screenWidth / radius,
-        // aspectRatio = width / height of the screen.
+        // Cylinder layer: each screen spans one decagon step (36°) edge-to-edge.
         constexpr float kCylinderRadius = 1.6f;
-        const float centralAngle = mon.sizeMeters.x / kCylinderRadius;
-        const float aspectRatio  = mon.sizeMeters.x / mon.sizeMeters.y;
+        constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;  // 36°
+        const float centralAngle = kDecagonStep;
+        const float aspectRatio  = 16.0f / 9.0f;
 
         const XrCompositionLayerCylinderKHR* layer = monitors_[i]->GetCompositionLayer(
             ctx_.GetWorldSpace(),
