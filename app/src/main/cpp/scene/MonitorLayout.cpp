@@ -12,7 +12,7 @@ namespace {
 // Angle between adjacent screen centers as seen from the decagon center.
 constexpr float kDecagonStep = 2.0f * static_cast<float>(M_PI) / 10.0f;  // 36°
 // Distance from the viewer to the screen plane (meters).
-constexpr float kDecagonRadius = 1.6f;
+constexpr float kDecagonRadius = 2.6f;
 
 XrVector3f Add(XrVector3f a, XrVector3f b) {
     return {a.x + b.x, a.y + b.y, a.z + b.z};
