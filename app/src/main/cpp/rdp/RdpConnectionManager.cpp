@@ -1,5 +1,6 @@
 #include "RdpConnectionManager.h"
 #include "RdpDisplayControl.h"
+#include "RdpInputForwarder.h"
 #include "../scene/VirtualMonitor.h"
 #include "../util/Logger.h"
 #include "../xr/StatusOverlay.h"
@@ -338,6 +339,11 @@ BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
         return FALSE;
     }
     ScreenLog("[OK] GDI initialized");
+
+    auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
+    if (ctx && ctx->self && ctx->self->inputForwarder_) {
+        ctx->self->inputForwarder_->Attach(instance);
+    }
     return TRUE;
 }
 
@@ -345,6 +351,9 @@ void RdpConnectionManager::OnPostDisconnect(freerdp* instance) {
     ScreenLog("[WARN] RDP disconnected");
     auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
     if (ctx && ctx->self) {
+        if (ctx->self->inputForwarder_) {
+            ctx->self->inputForwarder_->Detach();
+        }
         ctx->self->connected_.store(false);
     }
 }

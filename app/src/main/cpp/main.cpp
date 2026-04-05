@@ -8,6 +8,7 @@
 #include "xr/StatusOverlay.h"
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
+#include "rdp/RdpInputForwarder.h"
 #include "camera/QrScanner.h"
 #include "scene/MonitorLayout.h"
 #include "scene/FrustumCuller.h"
@@ -36,6 +37,7 @@ struct AppState {
     std::unique_ptr<FrustumCuller>        frustumCuller;
     std::unique_ptr<RdpDisplayControl>    displayControl;
     std::unique_ptr<RdpConnectionManager> rdpManager;
+    std::unique_ptr<RdpInputForwarder>    inputForwarder;
 
     // One VirtualMonitor per slot — owns codec + surface bridge + swapchain.
     std::array<std::unique_ptr<VirtualMonitor>, MonitorLayout::kMaxMonitors> monitors;
@@ -89,6 +91,13 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
     }
 }
 
+static int32_t handle_input(android_app* a, AInputEvent* event) {
+    auto* s = static_cast<AppState*>(a->userData);
+    if (s && s->inputForwarder && s->inputForwarder->OnInputEvent(event))
+        return 1;
+    return 0;
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 void android_main(android_app* app) {
@@ -108,6 +117,7 @@ void android_main(android_app* app) {
     AppState state;
     app->userData  = &state;
     app->onAppCmd  = handle_app_cmd;
+    app->onInputEvent = handle_input;
 
     // ── Initialise OpenXR ────────────────────────────────────────────────────
     state.xrContext = std::make_unique<XrContext>(app);
@@ -152,6 +162,8 @@ void android_main(android_app* app) {
         *state.displayControl,
         state.monitorPtrs.data(),
         static_cast<uint32_t>(state.monitorPtrs.size()));
+    state.inputForwarder = std::make_unique<RdpInputForwarder>();
+    state.rdpManager->SetInputForwarder(state.inputForwarder.get());
 
     // ── XrCompositor ─────────────────────────────────────────────────────────
     state.compositor = std::make_unique<XrCompositor>(

@@ -104,6 +104,7 @@ add_library(hyperdesk_mr SHARED
     xr/StatusOverlay.cpp
     rdp/RdpConnectionManager.cpp
     rdp/RdpDisplayControl.cpp
+    rdp/RdpInputForwarder.cpp
     codec/MediaCodecDecoder.cpp
     codec/CodecSurfaceBridge.cpp
     scene/MonitorLayout.cpp
