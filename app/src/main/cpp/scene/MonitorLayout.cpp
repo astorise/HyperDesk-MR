@@ -129,7 +129,7 @@ void MonitorLayout::BuildDefaultLayout() {
         const float yaw = MonitorYaw(i);
         m.worldPose.position = CanonicalPosition(i);
         m.worldPose.orientation = YawQuat(yaw);
-        m.sizeMeters = {1.92f, 1.08f};
+        m.sizeMeters = {1.50f, 0.844f};  // 16:9, fits decagon R≈2.5m
         // Normal points from screen toward the decagon center (the viewer).
         m.forwardNormal = {std::sin(yaw), 0.0f, std::cos(yaw)};
     }
