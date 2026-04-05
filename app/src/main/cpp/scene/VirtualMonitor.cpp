@@ -122,8 +122,9 @@ void VirtualMonitor::SubmitSoftwareFrame(const uint8_t* bgra, uint32_t srcWidth,
 
 // Task 8: Acquire latest image from AImageReader; bind to swapchain.
 // Task 10: Populate and return a non-null XrCompositionLayerQuad*.
-const XrCompositionLayerQuad* VirtualMonitor::GetCompositionLayer(
-        XrSpace worldSpace, XrPosef pose, XrExtent2Df size) {
+const XrCompositionLayerCylinderKHR* VirtualMonitor::GetCompositionLayer(
+        XrSpace worldSpace, XrPosef pose,
+        float radius, float centralAngle, float aspectRatio) {
     if (!swapchain_) return nullptr;
 
     // Task 8 — try to acquire the most recently decoded frame.
@@ -180,14 +181,16 @@ const XrCompositionLayerQuad* VirtualMonitor::GetCompositionLayer(
         return nullptr;
     }
 
-    // Task 10 — populate XrCompositionLayerQuad with non-null swapchain reference.
-    compositionLayer_                = XrCompositionLayerQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
+    // Task 10 — populate XrCompositionLayerCylinderKHR with non-null swapchain reference.
+    compositionLayer_                = XrCompositionLayerCylinderKHR{XR_TYPE_COMPOSITION_LAYER_CYLINDER_KHR};
     compositionLayer_.layerFlags     = 0;
     compositionLayer_.space          = worldSpace;
     compositionLayer_.eyeVisibility  = XR_EYE_VISIBILITY_BOTH;
     compositionLayer_.subImage       = swapchain_->GetSubImage();
     compositionLayer_.pose           = pose;
-    compositionLayer_.size           = size;
+    compositionLayer_.radius         = radius;
+    compositionLayer_.centralAngle   = centralAngle;
+    compositionLayer_.aspectRatio    = aspectRatio;
 
     swapchain_->ReleaseImage();
 

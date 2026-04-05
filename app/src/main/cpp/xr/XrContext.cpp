@@ -58,7 +58,11 @@ void XrContext::CreateInstance() {
         if (std::strcmp(ext.extensionName, "XR_FB_camera_access") == 0) {
             cameraAccessAvailable_ = true;
         }
+        if (std::strcmp(ext.extensionName, XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME) == 0) {
+            cylinderLayerAvailable_ = true;
+        }
     }
+    LOGI("XR_KHR_composition_layer_cylinder: %s", cylinderLayerAvailable_ ? "available" : "not available");
     LOGI("XR_FB_passthrough: %s", passthroughAvailable_ ? "available" : "not available");
     LOGI("XR_FB_camera_access: %s", cameraAccessAvailable_ ? "available" : "not available");
 
@@ -71,6 +75,9 @@ void XrContext::CreateInstance() {
     }
     if (cameraAccessAvailable_) {
         enabledExtensions.push_back("XR_FB_camera_access");
+    }
+    if (cylinderLayerAvailable_) {
+        enabledExtensions.push_back(XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
     }
 
     XrInstanceCreateInfoAndroidKHR androidInfo{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};

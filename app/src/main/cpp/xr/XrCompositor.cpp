@@ -57,10 +57,18 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
             continue;
         }
 
-        const XrCompositionLayerQuad* layer = monitors_[i]->GetCompositionLayer(
+        // Cylinder layer: radius = decagon radius, centralAngle = screenWidth / radius,
+        // aspectRatio = width / height of the screen.
+        constexpr float kCylinderRadius = 2.6f;  // must match MonitorLayout kDecagonRadius
+        const float centralAngle = mon.sizeMeters.x / kCylinderRadius;
+        const float aspectRatio  = mon.sizeMeters.x / mon.sizeMeters.y;
+
+        const XrCompositionLayerCylinderKHR* layer = monitors_[i]->GetCompositionLayer(
             ctx_.GetWorldSpace(),
             mon.worldPose,
-            {mon.sizeMeters.x, mon.sizeMeters.y});
+            kCylinderRadius,
+            centralAngle,
+            aspectRatio);
         if (!layer) {
             continue;
         }
