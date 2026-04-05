@@ -9,12 +9,9 @@ namespace {
 
 // ── Decagon geometry ─────────────────────────────────────────────────────────
 // 3 screens forming 3 consecutive sides of a regular 10-sided polygon.
-// sin(π/10) = sin(18°) ≈ 0.30902
-constexpr float kSinPiOver10 = 0.30902f;
 // Angle between adjacent screen centers as seen from the decagon center.
 constexpr float kDecagonStep = 2.0f * static_cast<float>(M_PI) / 10.0f;  // 36°
 // Distance from the viewer to the screen plane (meters).
-// Previously derived from kHSpacing (~3.24m); halved for comfortable viewing.
 constexpr float kDecagonRadius = 1.6f;
 
 XrVector3f Add(XrVector3f a, XrVector3f b) {
