@@ -57,9 +57,9 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
             continue;
         }
 
-        // Cylinder layer: radius = decagon radius, centralAngle = screenWidth / radius,
+        // Cylinder layer: radius = viewing distance, centralAngle = screenWidth / radius,
         // aspectRatio = width / height of the screen.
-        constexpr float kCylinderRadius = 2.6f;  // must match MonitorLayout kDecagonRadius
+        constexpr float kCylinderRadius = 1.6f;
         const float centralAngle = mon.sizeMeters.x / kCylinderRadius;
         const float aspectRatio  = mon.sizeMeters.x / mon.sizeMeters.y;
 

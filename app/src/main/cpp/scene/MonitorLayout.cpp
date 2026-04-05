@@ -86,16 +86,10 @@ float MonitorYaw(uint32_t index) {
     }
 }
 
-// Position on the decagonal arc (user is at the origin, screens face inward).
-// Position angle is the negative of the face yaw: the left screen sits at -X
-// but its face yaw is positive (rotated to face the viewer at center).
-XrVector3f CanonicalPosition(uint32_t index) {
-    const float posAngle = -MonitorYaw(index);
-    return {
-        kDecagonRadius * std::sin(posAngle),
-        0.0f,
-       -kDecagonRadius * std::cos(posAngle)
-    };
+// For cylinder layers the pose is at the cylinder center (the viewer).
+// All monitors share the same canonical position: the origin.
+XrVector3f CanonicalPosition([[maybe_unused]] uint32_t index) {
+    return {0.0f, 0.0f, 0.0f};
 }
 
 XrVector3f HeadForward(const XrQuaternionf& q) {
@@ -147,8 +141,8 @@ void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
     horizontalForward = Normalize(horizontalForward, {0.0f, 0.0f, -1.0f});
 
     primaryAnchorOrientation_ = YawOnlyWallOrientation(horizontalForward);
-    primaryAnchorPosition_ = Add(headPose.position, Scale(horizontalForward, kDecagonRadius));
-    primaryAnchorPosition_.y = headPose.position.y;
+    // Cylinder center is at the viewer, not projected forward.
+    primaryAnchorPosition_ = headPose.position;
     hasPrimaryAnchor_ = true;
 
     BuildDefaultLayout();
