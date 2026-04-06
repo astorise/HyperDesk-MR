@@ -9,6 +9,7 @@
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
 #include "rdp/RdpInputForwarder.h"
+#include "rdp/jni_mouse_bridge.h"
 #include "camera/QrScanner.h"
 #include "scene/MonitorLayout.h"
 #include "scene/FrustumCuller.h"
@@ -170,6 +171,7 @@ void android_main(android_app* app) {
         static_cast<uint32_t>(state.monitorPtrs.size()));
     state.inputForwarder = std::make_unique<RdpInputForwarder>();
     state.rdpManager->SetInputForwarder(state.inputForwarder.get());
+    JniMouseBridge_SetForwarder(state.inputForwarder.get());
 
     // ── XrCompositor ─────────────────────────────────────────────────────────
     state.compositor = std::make_unique<XrCompositor>(
@@ -400,6 +402,7 @@ void android_main(android_app* app) {
     }
 
     // ── Teardown ──────────────────────────────────────────────────────────────
+    JniMouseBridge_SetForwarder(nullptr);
     if (state.qrScanner) state.qrScanner->Stop();
     state.rdpManager->Disconnect();
     state.passthrough->Pause();

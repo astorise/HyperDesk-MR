@@ -22,6 +22,11 @@ public:
     // Returns true if the event was consumed.
     bool OnInputEvent(AInputEvent* event);
 
+    // Public accessors for the JNI mouse bridge.
+    rdpInput* GetInputPublic() const { return GetInput(); }
+    uint32_t GetDesktopW() const { return desktopW_; }
+    uint32_t GetDesktopH() const { return desktopH_; }
+
 private:
     bool HandleKeyEvent(AInputEvent* event);
     bool HandleMouseEvent(AInputEvent* event);

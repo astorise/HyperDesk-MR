@@ -347,6 +347,8 @@ BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
     auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
     if (ctx && ctx->self && ctx->self->inputForwarder_) {
         ctx->self->inputForwarder_->Attach(instance);
+        // Total desktop = 3 monitors × 1920 pixels wide.
+        ctx->self->inputForwarder_->SetDesktopSize(5760, 1080);
     }
     return TRUE;
 }
