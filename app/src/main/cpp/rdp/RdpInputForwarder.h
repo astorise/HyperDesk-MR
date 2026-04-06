@@ -3,6 +3,7 @@
 #include <android/input.h>
 #include <atomic>
 #include <cstdint>
+#include <mutex>
 
 #include <freerdp/freerdp.h>
 #include <freerdp/input.h>
@@ -17,10 +18,21 @@ public:
     void SetDesktopSize(uint32_t w, uint32_t h) {
         desktopW_ = w;
         desktopH_ = h;
+        // Reset cursor to center of primary monitor.
+        cursorX_ = 1920 + 960;  // center of monitor 0 (at left=1920)
+        cursorY_ = 540;
     }
 
     // Returns true if the event was consumed.
     bool OnInputEvent(AInputEvent* event);
+
+    // ── Evdev mouse methods (called from EvdevMouseReader thread) ─────────
+    // Relative movement — updates internal cursor, sends absolute coords.
+    void SendMouseMove(int32_t dx, int32_t dy);
+    // Button press/release — PTR_FLAGS_BUTTON1|PTR_FLAGS_DOWN etc.
+    void SendMouseButton(uint16_t flags);
+    // Wheel scroll (positive = up, negative = down).
+    void SendMouseWheel(int32_t clicks);
 
     // Public accessors for the JNI mouse bridge.
     rdpInput* GetInputPublic() const { return GetInput(); }
@@ -35,6 +47,11 @@ private:
     rdpInput* GetInput() const;
 
     std::atomic<freerdp*> instance_{nullptr};
-    uint32_t desktopW_ = 1920;
+    uint32_t desktopW_ = 5760;
     uint32_t desktopH_ = 1080;
+
+    // Internal absolute cursor position (updated by relative evdev deltas).
+    std::mutex cursorMutex_;
+    int32_t cursorX_ = 2880;  // center of 5760
+    int32_t cursorY_ = 540;
 };

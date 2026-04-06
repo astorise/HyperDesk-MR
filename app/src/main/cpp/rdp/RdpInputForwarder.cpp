@@ -138,6 +138,57 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
     return true;
 }
 
+// ── Evdev mouse methods ─────────────────────────────────────────────────────
+
+void RdpInputForwarder::SendMouseMove(int32_t dx, int32_t dy) {
+    rdpInput* input = GetInput();
+    if (!input) return;
+
+    uint16_t x, y;
+    {
+        std::lock_guard<std::mutex> lock(cursorMutex_);
+        cursorX_ = std::clamp(cursorX_ + dx, 0, static_cast<int32_t>(desktopW_ - 1));
+        cursorY_ = std::clamp(cursorY_ + dy, 0, static_cast<int32_t>(desktopH_ - 1));
+        x = static_cast<uint16_t>(cursorX_);
+        y = static_cast<uint16_t>(cursorY_);
+    }
+    freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, x, y);
+}
+
+void RdpInputForwarder::SendMouseButton(uint16_t flags) {
+    rdpInput* input = GetInput();
+    if (!input) return;
+
+    uint16_t x, y;
+    {
+        std::lock_guard<std::mutex> lock(cursorMutex_);
+        x = static_cast<uint16_t>(cursorX_);
+        y = static_cast<uint16_t>(cursorY_);
+    }
+    freerdp_input_send_mouse_event(input, flags, x, y);
+}
+
+void RdpInputForwarder::SendMouseWheel(int32_t clicks) {
+    rdpInput* input = GetInput();
+    if (!input) return;
+
+    uint16_t x, y;
+    {
+        std::lock_guard<std::mutex> lock(cursorMutex_);
+        x = static_cast<uint16_t>(cursorX_);
+        y = static_cast<uint16_t>(cursorY_);
+    }
+
+    uint16_t flags = PTR_FLAGS_WHEEL;
+    int magnitude = clicks * 120;
+    if (magnitude < 0) {
+        flags |= PTR_FLAGS_WHEEL_NEGATIVE;
+        magnitude = -magnitude;
+    }
+    flags |= static_cast<uint16_t>(std::min(magnitude, 0xFF));
+    freerdp_input_send_mouse_event(input, flags, x, y);
+}
+
 // ── Android keycode → RDP scancode mapping ───────────────────────────────────
 
 uint32_t RdpInputForwarder::AndroidKeycodeToRdp(int32_t ak) {

@@ -9,6 +9,7 @@
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
 #include "rdp/RdpInputForwarder.h"
+#include "rdp/EvdevMouseReader.h"
 #include "rdp/jni_mouse_bridge.h"
 #include "camera/QrScanner.h"
 #include "scene/MonitorLayout.h"
@@ -39,6 +40,7 @@ struct AppState {
     std::unique_ptr<RdpDisplayControl>    displayControl;
     std::unique_ptr<RdpConnectionManager> rdpManager;
     std::unique_ptr<RdpInputForwarder>    inputForwarder;
+    std::unique_ptr<EvdevMouseReader>     evdevMouse;
 
     // One VirtualMonitor per slot — owns codec + surface bridge + swapchain.
     std::array<std::unique_ptr<VirtualMonitor>, MonitorLayout::kMaxMonitors> monitors;
@@ -70,6 +72,11 @@ struct AppState {
     bool running       = true;
     bool sessionActive = false;
     bool codecsReady   = false;
+
+    // Reconnection state.
+    RdpConnectionManager::ConnectionParams lastConnParams;
+    bool                                   hasConnParams = false;
+    uint64_t                               reconnectCooldownFrame = 0;
 };
 
 // ── Android lifecycle callback ────────────────────────────────────────────────
@@ -172,6 +179,12 @@ void android_main(android_app* app) {
     state.inputForwarder = std::make_unique<RdpInputForwarder>();
     state.rdpManager->SetInputForwarder(state.inputForwarder.get());
     JniMouseBridge_SetForwarder(state.inputForwarder.get());
+    state.evdevMouse = std::make_unique<EvdevMouseReader>(*state.inputForwarder);
+    if (state.evdevMouse->Start()) {
+        LOGI("EvdevMouseReader started — Bluetooth mouse active");
+    } else {
+        LOGW("EvdevMouseReader: no mouse found (will retry on RDP connect)");
+    }
 
     // ── XrCompositor ─────────────────────────────────────────────────────────
     state.compositor = std::make_unique<XrCompositor>(
@@ -281,7 +294,14 @@ void android_main(android_app* app) {
             }
 
             state.statusOverlay->AddLog("Connecting...");
+            state.lastConnParams = params;
+            state.hasConnParams = true;
             state.rdpManager->Connect(params);
+
+            // Retry evdev mouse if it wasn't found at startup.
+            if (state.evdevMouse && !state.evdevMouse->IsRunning()) {
+                state.evdevMouse->Start();
+            }
         });
     if (state.qrScanner->Start()) {
         LOGI("QR scanner active — point headset at a QR code to connect");
@@ -389,6 +409,17 @@ void android_main(android_app* app) {
             state.xrContext->EndFrame(frameState, 0, nullptr);
         }
 
+        // ── Auto-reconnect when RDP session drops ─────────────────────────
+        if (state.hasConnParams && !state.rdpManager->IsConnected()
+            && frameCount > state.reconnectCooldownFrame) {
+            LOGI("RDP disconnected — attempting reconnection");
+            state.statusOverlay->AddLog("[WARN] RDP disconnected — reconnecting...");
+            state.rdpManager->Disconnect();  // clean up previous session
+            state.rdpManager->Connect(state.lastConnParams);
+            // Cooldown: wait ~5s (360 frames at 72 Hz) before next retry.
+            state.reconnectCooldownFrame = frameCount + 360;
+        }
+
         // Periodic scanner status indicator (~every 5s at 72fps).
         if (++frameCount % 360 == 0) {
             if (state.qrScanner && state.qrScanner->IsRunning()) {
@@ -402,6 +433,7 @@ void android_main(android_app* app) {
     }
 
     // ── Teardown ──────────────────────────────────────────────────────────────
+    if (state.evdevMouse) state.evdevMouse->Stop();
     JniMouseBridge_SetForwarder(nullptr);
     if (state.qrScanner) state.qrScanner->Stop();
     state.rdpManager->Disconnect();
