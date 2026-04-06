@@ -93,6 +93,12 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
 
 static int32_t handle_input(android_app* a, AInputEvent* event) {
     auto* s = static_cast<AppState*>(a->userData);
+    if (!event) return 0;
+
+    const int32_t type = AInputEvent_getType(event);
+    const int32_t source = AInputEvent_getSource(event);
+    LOGD("handle_input: type=%d source=0x%08X", type, source);
+
     if (s && s->inputForwarder && s->inputForwarder->OnInputEvent(event))
         return 1;
     return 0;

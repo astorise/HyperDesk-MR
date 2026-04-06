@@ -26,10 +26,17 @@ bool RdpInputForwarder::OnInputEvent(AInputEvent* event) {
         return HandleKeyEvent(event);
     }
 
-    // Mouse (source has AINPUT_SOURCE_MOUSE bit set)
-    if (type == AINPUT_EVENT_TYPE_MOTION &&
-        (source & AINPUT_SOURCE_MOUSE) == AINPUT_SOURCE_MOUSE) {
-        return HandleMouseEvent(event);
+    // Mouse — accept AINPUT_SOURCE_MOUSE, AINPUT_SOURCE_TOUCHPAD, or
+    // AINPUT_SOURCE_MOUSE_RELATIVE (Bluetooth mice on Quest can report any of these).
+    if (type == AINPUT_EVENT_TYPE_MOTION) {
+        const bool isMouse    = (source & AINPUT_SOURCE_MOUSE) == AINPUT_SOURCE_MOUSE;
+        const bool isTouchpad = (source & AINPUT_SOURCE_TOUCHPAD) == AINPUT_SOURCE_TOUCHPAD;
+        const bool isMouseRel = (source & 0x20004) == 0x20004;  // AINPUT_SOURCE_MOUSE_RELATIVE
+        LOGD("InputForwarder: MOTION source=0x%08X isMouse=%d isTouchpad=%d isMouseRel=%d",
+             source, isMouse, isTouchpad, isMouseRel);
+        if (isMouse || isTouchpad || isMouseRel) {
+            return HandleMouseEvent(event);
+        }
     }
 
     return false;
@@ -68,6 +75,9 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
         std::clamp(static_cast<int>(rawX), 0, static_cast<int>(desktopW_ - 1)));
     const uint16_t y = static_cast<uint16_t>(
         std::clamp(static_cast<int>(rawY), 0, static_cast<int>(desktopH_ - 1)));
+
+    LOGD("InputForwarder::HandleMouseEvent: action=%d rawX=%.1f rawY=%.1f x=%u y=%u",
+         action, rawX, rawY, x, y);
 
     switch (action) {
         case AMOTION_EVENT_ACTION_HOVER_MOVE:
