@@ -94,7 +94,6 @@ void EvdevMouseReader::ReadLoop() {
 
     int32_t accumX = 0, accumY = 0;
     int32_t accumWheel = 0;
-    uint32_t buttonMask = 0;  // tracks current button state
 
     while (!stopFlag_.load()) {
         struct pollfd pfd{};
@@ -129,10 +128,8 @@ void EvdevMouseReader::ReadLoop() {
                         if (ev.code == BTN_MIDDLE) rdpButton = PTR_FLAGS_BUTTON3;
 
                         if (pressed) {
-                            buttonMask |= rdpButton;
                             forwarder_.SendMouseButton(rdpButton | PTR_FLAGS_DOWN);
                         } else {
-                            buttonMask &= ~rdpButton;
                             forwarder_.SendMouseButton(rdpButton);
                         }
                     }
