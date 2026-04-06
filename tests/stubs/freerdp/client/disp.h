@@ -14,6 +14,7 @@ typedef int      BOOL;
 // ── Return codes ─────────────────────────────────────────────────────────────
 #define CHANNEL_RC_OK        0u
 #define ERROR_INTERNAL_ERROR 5u
+#define ERROR_INVALID_DATA   13u
 
 // ── Monitor orientation ───────────────────────────────────────────────────────
 #define ORIENTATION_LANDSCAPE          0u

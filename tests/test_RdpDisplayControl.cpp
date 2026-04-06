@@ -46,9 +46,9 @@ protected:
 
 // ── SendMonitorLayout ─────────────────────────────────────────────────────────
 
-TEST_F(RdpDisplayControlTest, SendsExactly16Monitors) {
+TEST_F(RdpDisplayControlTest, SendsExactly3Monitors) {
     ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
-    ASSERT_EQ(mock.capturedMonitors.size(), 16u);
+    ASSERT_EQ(mock.capturedMonitors.size(), 3u);
 }
 
 TEST_F(RdpDisplayControlTest, Monitor0_HasPrimaryFlag) {
@@ -72,31 +72,24 @@ TEST_F(RdpDisplayControlTest, AllMonitors_1920x1080) {
     }
 }
 
-TEST_F(RdpDisplayControlTest, Monitor0_GridCoordinates_TopLeft) {
+// Monitor 0 (center/primary) at Left=1920, Monitor 1 (left) at Left=0,
+// Monitor 2 (right) at Left=3840. All at Top=0.
+TEST_F(RdpDisplayControlTest, Monitor0_CenterPosition) {
     ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
-    EXPECT_EQ(mock.capturedMonitors[0].Left, 0);
+    EXPECT_EQ(mock.capturedMonitors[0].Left, 1920);
     EXPECT_EQ(mock.capturedMonitors[0].Top,  0);
 }
 
-TEST_F(RdpDisplayControlTest, Monitor3_GridCoordinates_TopRight) {
+TEST_F(RdpDisplayControlTest, Monitor1_LeftPosition) {
     ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
-    // col=3, row=0 → Left=3*1920, Top=0
-    EXPECT_EQ(mock.capturedMonitors[3].Left, 3 * 1920);
-    EXPECT_EQ(mock.capturedMonitors[3].Top,  0);
+    EXPECT_EQ(mock.capturedMonitors[1].Left, 0);
+    EXPECT_EQ(mock.capturedMonitors[1].Top,  0);
 }
 
-TEST_F(RdpDisplayControlTest, Monitor4_GridCoordinates_SecondRow) {
+TEST_F(RdpDisplayControlTest, Monitor2_RightPosition) {
     ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
-    // col=0, row=1 → Left=0, Top=1*1080
-    EXPECT_EQ(mock.capturedMonitors[4].Left, 0);
-    EXPECT_EQ(mock.capturedMonitors[4].Top,  1 * 1080);
-}
-
-TEST_F(RdpDisplayControlTest, Monitor15_GridCoordinates_BottomRight) {
-    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
-    // col=3, row=3 → Left=3*1920, Top=3*1080
-    EXPECT_EQ(mock.capturedMonitors[15].Left, 3 * 1920);
-    EXPECT_EQ(mock.capturedMonitors[15].Top,  3 * 1080);
+    EXPECT_EQ(mock.capturedMonitors[2].Left, 3840);
+    EXPECT_EQ(mock.capturedMonitors[2].Top,  0);
 }
 
 TEST_F(RdpDisplayControlTest, AllMonitors_LandscapeOrientation) {
@@ -122,28 +115,30 @@ TEST_F(RdpDisplayControlTest, SendMonitorLayout_CallCount_One) {
 
 // ── OnDisplayControlCaps callback ────────────────────────────────────────────
 
-TEST_F(RdpDisplayControlTest, OnCaps_16Monitors_TriggersLayoutSend) {
-    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 16, 8192, 0);
+TEST_F(RdpDisplayControlTest, OnCaps_3Monitors_TriggersLayoutSend) {
+    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 3, 8192, 0);
 
     EXPECT_EQ(result, CHANNEL_RC_OK);
     EXPECT_EQ(mock.sendCallCount, 1);
-    EXPECT_EQ(mock.capturedMonitors.size(), 16u);
+    EXPECT_EQ(mock.capturedMonitors.size(), 3u);
 }
 
 TEST_F(RdpDisplayControlTest, OnCaps_32Monitors_TriggersLayoutSend) {
     RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 32, 0, 0);
     EXPECT_EQ(mock.sendCallCount, 1);
+    EXPECT_EQ(mock.capturedMonitors.size(), 3u);
 }
 
-TEST_F(RdpDisplayControlTest, OnCaps_TooFewMonitors_NoLayoutSent) {
-    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 8, 0, 0);
-
+TEST_F(RdpDisplayControlTest, OnCaps_TooFewMonitors_DegradedLayout) {
+    // Server supports only 1 monitor — should still send 1.
+    UINT result = RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 1, 0, 0);
     EXPECT_EQ(result, CHANNEL_RC_OK);
-    EXPECT_EQ(mock.sendCallCount, 0);
+    EXPECT_EQ(mock.sendCallCount, 1);
+    EXPECT_EQ(mock.capturedMonitors.size(), 1u);
 }
 
-TEST_F(RdpDisplayControlTest, OnCaps_Exactly15Monitors_NoLayoutSent) {
-    RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 15, 0, 0);
+TEST_F(RdpDisplayControlTest, OnCaps_ZeroMonitors_NoLayoutSent) {
+    RdpDisplayControl::OnDisplayControlCaps(&mock.ctx, 0, 0, 0);
     EXPECT_EQ(mock.sendCallCount, 0);
 }
 
@@ -154,21 +149,4 @@ TEST_F(RdpDisplayControlTest, SendBeforeAttach_ReturnsError) {
     // Not attached — must not crash and must return a non-OK code.
     UINT result = ctrl2.SendMonitorLayout(MonitorLayout::kMaxMonitors);
     EXPECT_NE(result, CHANNEL_RC_OK);
-}
-
-// ── Grid coordinate exhaustive check ─────────────────────────────────────────
-
-TEST_F(RdpDisplayControlTest, AllMonitors_CorrectGridCoordinates) {
-    ctrl.SendMonitorLayout(MonitorLayout::kMaxMonitors);
-    ASSERT_EQ(mock.capturedMonitors.size(), 16u);
-
-    for (uint32_t i = 0; i < 16u; ++i) {
-        const uint32_t col      = i % 4;
-        const uint32_t row      = i / 4;
-        const INT32    expLeft  = static_cast<INT32>(col * 1920);
-        const INT32    expTop   = static_cast<INT32>(row * 1080);
-
-        EXPECT_EQ(mock.capturedMonitors[i].Left, expLeft) << "monitor " << i;
-        EXPECT_EQ(mock.capturedMonitors[i].Top,  expTop)  << "monitor " << i;
-    }
 }
