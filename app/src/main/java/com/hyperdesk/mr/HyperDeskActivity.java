@@ -15,9 +15,28 @@ import android.view.MotionEvent;
  */
 public class HyperDeskActivity extends NativeActivity {
 
+    private static boolean sNativeReady = false;
+
+    static {
+        try {
+            System.loadLibrary("hyperdesk_mr");
+            sNativeReady = true;
+        } catch (UnsatisfiedLinkError e) {
+            // Library will be loaded later by NativeActivity.onCreate().
+            sNativeReady = false;
+        }
+    }
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // After NativeActivity.onCreate the library is guaranteed loaded.
+        sNativeReady = true;
+    }
+
     @Override
     public boolean dispatchGenericMotionEvent(MotionEvent ev) {
-        if (isMouseEvent(ev)) {
+        if (sNativeReady && isMouseEvent(ev)) {
             nativeOnMouseEvent(ev.getAction(), ev.getX(), ev.getY(),
                                ev.getButtonState(),
                                ev.getAxisValue(MotionEvent.AXIS_VSCROLL),
@@ -29,7 +48,7 @@ public class HyperDeskActivity extends NativeActivity {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        if (isMouseEvent(ev)) {
+        if (sNativeReady && isMouseEvent(ev)) {
             nativeOnMouseEvent(ev.getAction(), ev.getX(), ev.getY(),
                                ev.getButtonState(), 0.0f, 0.0f);
             return true;
@@ -44,7 +63,7 @@ public class HyperDeskActivity extends NativeActivity {
     }
 
     /**
-     * JNI bridge — implemented in RdpInputForwarder (jni_mouse_bridge.cpp).
+     * JNI bridge — implemented in jni_mouse_bridge.cpp.
      */
     private static native void nativeOnMouseEvent(int action, float x, float y,
                                                    int buttonState,
