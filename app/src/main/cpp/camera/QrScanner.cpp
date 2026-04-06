@@ -148,6 +148,10 @@ bool QrScanner::IsRunning() const {
     return camera_->IsRunning() && !hasResult_.load();
 }
 
+uint8_t QrScanner::GetActiveCameraPosition() const {
+    return camera_->GetSelectedCameraPosition();
+}
+
 void QrScanner::OnFrame(const uint8_t* data, int32_t width, int32_t height, int32_t rowStride) {
     {
         std::lock_guard lock(frameMutex_);

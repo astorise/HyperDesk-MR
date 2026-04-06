@@ -28,6 +28,7 @@ void CameraManager::SetFrameCallback(FrameCallback cb) {
 
 bool CameraManager::Start() {
     if (running_.load()) return true;
+    selectedCameraPosition_.store(255);
 
     cameraMgr_ = ACameraManager_create();
     if (!cameraMgr_) {
@@ -112,9 +113,13 @@ std::string CameraManager::FindCameraId() {
 
     LOGI("CameraManager: %d camera(s) found", cameraIds->numCameras);
     std::string leftPassthroughId;
+    uint8_t leftPassthroughPosition = 255;
     std::string anyPassthroughId;
+    uint8_t anyPassthroughPosition = 255;
     std::string backFacingId;
+    uint8_t backFacingPosition = 255;
     std::string anyId;
+    uint8_t anyPosition = 255;
 
     for (int i = 0; i < cameraIds->numCameras; ++i) {
         const char* id = cameraIds->cameraIds[i];
@@ -158,27 +163,43 @@ std::string CameraManager::FindCameraId() {
         if (isPassthrough) {
             if (anyPassthroughId.empty()) {
                 anyPassthroughId = id;
+                anyPassthroughPosition = position;
             }
             if (position == 0 && leftPassthroughId.empty()) {
                 leftPassthroughId = id;
+                leftPassthroughPosition = position;
             }
         }
 
         if (facing == ACAMERA_LENS_FACING_BACK && backFacingId.empty()) {
             backFacingId = id;
+            backFacingPosition = position;
         }
         if (anyId.empty()) {
             anyId = id;
+            anyPosition = position;
         }
 
         ACameraMetadata_free(metadata);
     }
 
     ACameraManager_deleteCameraIdList(cameraIds);
-    std::string result = !leftPassthroughId.empty() ? leftPassthroughId
-                       : !anyPassthroughId.empty()  ? anyPassthroughId
-                       : !backFacingId.empty()      ? backFacingId
-                       : anyId;
+    std::string result;
+    uint8_t resultPosition = 255;
+    if (!leftPassthroughId.empty()) {
+        result = leftPassthroughId;
+        resultPosition = leftPassthroughPosition;
+    } else if (!anyPassthroughId.empty()) {
+        result = anyPassthroughId;
+        resultPosition = anyPassthroughPosition;
+    } else if (!backFacingId.empty()) {
+        result = backFacingId;
+        resultPosition = backFacingPosition;
+    } else {
+        result = anyId;
+        resultPosition = anyPosition;
+    }
+    selectedCameraPosition_.store(resultPosition);
     LOGI("CameraManager: using camera '%s'", result.c_str());
 
     if (StatusOverlay::sInstance) {

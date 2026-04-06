@@ -16,6 +16,7 @@
 
 class RdpDisplayControl;
 class RdpConnectionManager;
+class RdpInputForwarder;
 class VirtualMonitor;
 
 // Extended FreeRDP client context — must begin with rdpClientContext so that
@@ -46,6 +47,8 @@ public:
     // Argument is the FreeRDP error code from freerdp_get_last_error().
     using ErrorCallback = std::function<void(uint32_t errorCode)>;
     void SetErrorCallback(ErrorCallback cb);
+
+    void SetInputForwarder(RdpInputForwarder* fwd) { inputForwarder_ = fwd; }
 
     bool Connect(const ConnectionParams& params);
     void Disconnect();
@@ -102,7 +105,7 @@ private:
     void SetupSettings(rdpSettings* settings, const ConnectionParams& params);
     void RunEventLoop();
 
-    static constexpr uint32_t kMaxMonitors = 16;
+    static constexpr uint32_t kMaxMonitors = 3;
 
     // VirtualMonitor pointers passed in at construction time.
     VirtualMonitor* monitors_[kMaxMonitors]{};
@@ -149,4 +152,6 @@ private:
     bool softwareFallbackLogged_ = false;
 
     void PushSoftwareFallbackFrame(RdpgfxClientContext* gfx);
+
+    RdpInputForwarder* inputForwarder_ = nullptr;
 };

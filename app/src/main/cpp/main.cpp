@@ -8,14 +8,18 @@
 #include "xr/StatusOverlay.h"
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
+#include "rdp/RdpInputForwarder.h"
 #include "camera/QrScanner.h"
 #include "scene/MonitorLayout.h"
 #include "scene/FrustumCuller.h"
 #include "scene/VirtualMonitor.h"
 
+#include <algorithm>
 #include <array>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <mutex>
 
 #ifdef __ANDROID__
 #include <jni.h>
@@ -33,6 +37,7 @@ struct AppState {
     std::unique_ptr<FrustumCuller>        frustumCuller;
     std::unique_ptr<RdpDisplayControl>    displayControl;
     std::unique_ptr<RdpConnectionManager> rdpManager;
+    std::unique_ptr<RdpInputForwarder>    inputForwarder;
 
     // One VirtualMonitor per slot — owns codec + surface bridge + swapchain.
     std::array<std::unique_ptr<VirtualMonitor>, MonitorLayout::kMaxMonitors> monitors;
@@ -41,6 +46,25 @@ struct AppState {
     std::unique_ptr<XrCompositor>         compositor;
     std::unique_ptr<StatusOverlay>        statusOverlay;
     std::unique_ptr<QrScanner>            qrScanner;
+
+    std::mutex                            latestHeadPoseMutex;
+    XrPosef                              latestHeadPose{{0.0f, 0.0f, 0.0f, 1.0f},
+                                                        {0.0f, 0.0f, 0.0f}};
+    bool                                 latestHeadPoseValid = false;
+    std::array<XrPosef, 2>               latestEyePoses{{
+                                            {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}},
+                                            {{0.0f, 0.0f, 0.0f, 1.0f}, {0.0f, 0.0f, 0.0f}}
+                                        }};
+    std::array<bool, 2>                  latestEyePosesValid{{false, false}};
+
+    std::mutex                           pendingLayoutAnchorMutex;
+    XrPosef                             lastLayoutAnchorPose{{0.0f, 0.0f, 0.0f, 1.0f},
+                                                             {0.0f, 0.0f, 0.0f}};
+    bool                                lastLayoutAnchorPoseValid = false;
+    XrPosef                             pendingLayoutAnchorPose{{0.0f, 0.0f, 0.0f, 1.0f},
+                                                                {0.0f, 0.0f, 0.0f}};
+    bool                                pendingLayoutAnchorPoseValid = false;
+    uint32_t                            pendingLayoutAnchorFrames = 0;
 
     bool running       = true;
     bool sessionActive = false;
@@ -67,10 +91,19 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
     }
 }
 
+static int32_t handle_input(android_app* a, AInputEvent* event) {
+    auto* s = static_cast<AppState*>(a->userData);
+    if (s && s->inputForwarder && s->inputForwarder->OnInputEvent(event))
+        return 1;
+    return 0;
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
+    static constexpr uint32_t kQrAnchorFrames = 30;
+    static constexpr uint32_t kLayoutRefreshAnchorFrames = 8;
 
     // Register the JavaVM with WinPR so winpr_jni_attach_thread (used by
     // Unicode conversion, timezone, etc.) can attach to the JVM.
@@ -84,6 +117,7 @@ void android_main(android_app* app) {
     AppState state;
     app->userData  = &state;
     app->onAppCmd  = handle_app_cmd;
+    app->onInputEvent = handle_input;
 
     // ── Initialise OpenXR ────────────────────────────────────────────────────
     state.xrContext = std::make_unique<XrContext>(app);
@@ -110,10 +144,26 @@ void android_main(android_app* app) {
 
     // ── RDP subsystem ────────────────────────────────────────────────────────
     state.displayControl = std::make_unique<RdpDisplayControl>(*state.monitorLayout);
+    state.displayControl->SetMonitorConfigAppliedCallback(
+        [&state](uint32_t monitorCount) {
+            std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+            if (!state.lastLayoutAnchorPoseValid) {
+                return;
+            }
+
+            state.pendingLayoutAnchorPose = state.lastLayoutAnchorPose;
+            state.pendingLayoutAnchorPoseValid = true;
+            state.pendingLayoutAnchorFrames =
+                std::max(state.pendingLayoutAnchorFrames, kLayoutRefreshAnchorFrames);
+            LOGI("Queued wall re-anchor after display layout update (%u monitor(s))",
+                 monitorCount);
+        });
     state.rdpManager     = std::make_unique<RdpConnectionManager>(
         *state.displayControl,
         state.monitorPtrs.data(),
         static_cast<uint32_t>(state.monitorPtrs.size()));
+    state.inputForwarder = std::make_unique<RdpInputForwarder>();
+    state.rdpManager->SetInputForwarder(state.inputForwarder.get());
 
     // ── XrCompositor ─────────────────────────────────────────────────────────
     state.compositor = std::make_unique<XrCompositor>(
@@ -171,6 +221,40 @@ void android_main(android_app* app) {
             snprintf(buf, sizeof(buf), "  user=%s domain=%s",
                      params.username.c_str(), params.domain.c_str());
             state.statusOverlay->AddLog(buf);
+            const uint8_t scanCameraPosition = state.qrScanner->GetActiveCameraPosition();
+            XrPosef scanAnchorPose{};
+            bool haveScanAnchorPose = false;
+            const char* scanAnchorSource = "xr-head";
+            {
+                std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                if (scanCameraPosition <= 1 && state.latestEyePosesValid[scanCameraPosition]) {
+                    scanAnchorPose = state.latestEyePoses[scanCameraPosition];
+                    haveScanAnchorPose = true;
+                    scanAnchorSource = (scanCameraPosition == 0) ? "qr-eye-left" : "qr-eye-right";
+                } else if (state.latestHeadPoseValid) {
+                    scanAnchorPose = state.latestHeadPose;
+                    haveScanAnchorPose = true;
+                }
+            }
+            {
+                std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                state.lastLayoutAnchorPose = scanAnchorPose;
+                state.lastLayoutAnchorPoseValid = haveScanAnchorPose;
+                state.pendingLayoutAnchorFrames = kQrAnchorFrames;
+                state.pendingLayoutAnchorPose = scanAnchorPose;
+                state.pendingLayoutAnchorPoseValid = haveScanAnchorPose;
+            }
+            if (haveScanAnchorPose) {
+                state.monitorLayout->AnchorPrimaryToHeadPose(scanAnchorPose);
+                LOGI("Queued QR wall anchor from %s (camera position=%u)",
+                     scanAnchorSource,
+                     static_cast<unsigned>(scanCameraPosition));
+                state.statusOverlay->AddLog("[OK] Screen wall anchored to scan");
+            } else {
+                LOGW("No latest XR pose available at QR scan; waiting for render pose");
+                state.statusOverlay->AddLog("[WARN] Waiting for XR pose to anchor wall");
+            }
+            state.statusOverlay->AddLog("Aligning screen wall to scan heading...");
             state.statusOverlay->AddLog("Stopping camera...");
             state.qrScanner->Stop();
 
@@ -227,6 +311,69 @@ void android_main(android_app* app) {
         bool shouldRender = state.xrContext->BeginFrame(frameState);
 
         if (shouldRender && state.sessionActive) {
+            XrPosef currentHeadPose{};
+            const bool currentHeadPoseValid =
+                state.xrContext->LocateHeadPose(frameState.predictedDisplayTime, currentHeadPose);
+            std::array<XrView, 2> currentViews{XrView{XR_TYPE_VIEW}, XrView{XR_TYPE_VIEW}};
+            const bool currentViewsValid =
+                state.xrContext->LocateViews(frameState.predictedDisplayTime, currentViews);
+            if (currentHeadPoseValid || currentViewsValid) {
+                std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                if (currentHeadPoseValid) {
+                    state.latestHeadPose = currentHeadPose;
+                    state.latestHeadPoseValid = true;
+                }
+                if (currentViewsValid) {
+                    state.latestEyePoses[0] = currentViews[0].pose;
+                    state.latestEyePoses[1] = currentViews[1].pose;
+                    state.latestEyePosesValid[0] = true;
+                    state.latestEyePosesValid[1] = true;
+                }
+            }
+
+            uint32_t anchorFramesRemaining = 0;
+            XrPosef queuedAnchorPose{};
+            bool queuedAnchorPoseValid = false;
+            {
+                std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                anchorFramesRemaining = state.pendingLayoutAnchorFrames;
+                queuedAnchorPose = state.pendingLayoutAnchorPose;
+                queuedAnchorPoseValid = state.pendingLayoutAnchorPoseValid;
+            }
+
+            if (anchorFramesRemaining > 0) {
+                XrPosef anchorPose = currentHeadPose;
+                bool anchorPoseValid = currentHeadPoseValid;
+                if (anchorFramesRemaining == kQrAnchorFrames && queuedAnchorPoseValid) {
+                    anchorPose = queuedAnchorPose;
+                    anchorPoseValid = true;
+                }
+
+                if (anchorPoseValid) {
+                    if (anchorFramesRemaining == kQrAnchorFrames) {
+                        LOGI("Applying QR wall anchor over %u XR frames", kQrAnchorFrames);
+                    } else if (anchorFramesRemaining == kLayoutRefreshAnchorFrames) {
+                        LOGI("Reapplying QR wall anchor after display reconfiguration");
+                    }
+                    state.monitorLayout->AnchorPrimaryToHeadPose(anchorPose);
+                    {
+                        std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
+                        state.lastLayoutAnchorPose = anchorPose;
+                        state.lastLayoutAnchorPoseValid = true;
+                        state.pendingLayoutAnchorPoseValid = false;
+                        if (state.pendingLayoutAnchorFrames > 0) {
+                            --state.pendingLayoutAnchorFrames;
+                            if (state.pendingLayoutAnchorFrames == 0) {
+                                LOGI("QR wall anchor locked");
+                                state.statusOverlay->AddLog("[OK] Screen wall anchor locked");
+                            }
+                        }
+                    }
+                } else {
+                    LOGW("Head pose unavailable while anchoring QR wall");
+                }
+            }
+
             state.xrContext->SyncActions();
             state.compositor->RenderFrame(frameState);
         } else {

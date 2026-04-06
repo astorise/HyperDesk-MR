@@ -8,6 +8,7 @@
 #include <media/NdkImageReader.h>
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <mutex>
 #include <string>
@@ -34,6 +35,7 @@ public:
     void Stop();
 
     bool IsRunning() const { return running_.load(); }
+    uint8_t GetSelectedCameraPosition() const { return selectedCameraPosition_.load(); }
 
 private:
     ACameraManager*    cameraMgr_ = nullptr;
@@ -46,6 +48,7 @@ private:
     ACameraOutputTarget*           outputTarget_ = nullptr;
 
     std::atomic<bool>  running_{false};
+    std::atomic<uint8_t> selectedCameraPosition_{255};
     FrameCallback      frameCallback_;
     std::mutex         callbackMutex_;
 

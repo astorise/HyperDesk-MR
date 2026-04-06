@@ -51,9 +51,13 @@ public:
     // composition layer descriptor.  Returns nullptr if the decoder is stopped,
     // the swapchain cannot be acquired, or InitXr() has not been called.
     // worldSpace, pose, and size are passed in from the render loop / MonitorLayout.
-    const XrCompositionLayerQuad* GetCompositionLayer(XrSpace     worldSpace,
-                                                       XrPosef     pose,
-                                                       XrExtent2Df size);
+    // radius and centralAngle define the cylinder curvature.
+    const XrCompositionLayerCylinderKHR* GetCompositionLayer(
+        XrSpace     worldSpace,
+        XrPosef     pose,
+        float       radius,
+        float       centralAngle,
+        float       aspectRatio);
 
     // Frustum-culler hooks — forward to the underlying decoder.
     void PauseDecoder();
@@ -72,7 +76,7 @@ private:
     std::unique_ptr<MediaCodecDecoder>  decoder_;
     std::unique_ptr<HdSwapchain>        swapchain_;
 
-    XrCompositionLayerQuad  compositionLayer_{};
+    XrCompositionLayerCylinderKHR compositionLayer_{};
     bool                    firstBoundFrameLogged_ = false;
     bool                    firstSoftwareFrameLogged_ = false;
 

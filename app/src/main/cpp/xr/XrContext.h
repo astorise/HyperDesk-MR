@@ -36,6 +36,9 @@ public:
     // Enumerate stereo views for the predicted display time.
     bool LocateViews(XrTime predictedTime, std::array<XrView, 2>& views);
 
+    // Returns a cyclopean head pose for the predicted display time.
+    bool LocateHeadPose(XrTime predictedTime, XrPosef& headPose);
+
     // Fire a short haptic pulse on both controllers.
     void TriggerHapticPulse(float amplitude = 0.5f, int64_t durationNs = 100000000);
 
@@ -56,6 +59,7 @@ public:
     XrPassthroughLayerFB GetPassthroughLayerFB() const { return passthroughLayer_; }
     bool                 IsPassthroughAvailable() const { return passthroughAvailable_; }
     bool                 IsCameraAccessAvailable() const { return cameraAccessAvailable_; }
+    bool                 IsCylinderLayerAvailable() const { return cylinderLayerAvailable_; }
     bool                 IsSessionRunning() const { return sessionRunning_; }
 
 private:
@@ -64,9 +68,11 @@ private:
     XrSession            session_          = XR_NULL_HANDLE;
     XrSystemId           systemId_         = XR_NULL_SYSTEM_ID;
     XrSpace              worldSpace_       = XR_NULL_HANDLE;
+    XrSpace              viewSpace_        = XR_NULL_HANDLE;
     XrSessionState       sessionState_     = XR_SESSION_STATE_UNKNOWN;
     bool                 passthroughAvailable_ = false;
     bool                 cameraAccessAvailable_ = false;
+    bool                 cylinderLayerAvailable_ = false;
     bool                 sessionRunning_ = false;
     bool                 actionSetsAttached_ = false;
     XrPassthroughFB      passthrough_          = XR_NULL_HANDLE;

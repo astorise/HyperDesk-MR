@@ -1,5 +1,6 @@
 #include "RdpConnectionManager.h"
 #include "RdpDisplayControl.h"
+#include "RdpInputForwarder.h"
 #include "../scene/VirtualMonitor.h"
 #include "../util/Logger.h"
 #include "../xr/StatusOverlay.h"
@@ -127,6 +128,10 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444,                   FALSE);
     freerdp_settings_set_bool(settings, FreeRDP_GfxAVC444v2,                 FALSE);
 
+    // Enable audio playback (rdpsnd channel — FreeRDP picks the opensles backend).
+    freerdp_settings_set_bool(settings, FreeRDP_AudioPlayback,  TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_AudioCapture,   FALSE);
+
     // Disable NLA — OpenSSL on Android lacks the LEGACY provider (MD4)
     // which NTLM password hashing requires.  Fall back to TLS security.
     freerdp_settings_set_bool(settings, FreeRDP_NlaSecurity, FALSE);
@@ -136,9 +141,65 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     // Accept self-signed RDP certificates without user prompt.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
 
-    // Set a large desktop area to accommodate 16 monitors at 1920x1080.
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920 * 4);
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 1080 * 4);
+    // Declare 3 monitors at connection time so Windows creates 3 virtual displays.
+    freerdp_settings_set_bool(settings, FreeRDP_UseMultimon, TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_ForceMultimon, TRUE);
+    freerdp_settings_set_bool(settings, FreeRDP_HasMonitorAttributes, TRUE);
+
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920);
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 1080);
+
+    // Allocate monitor array: monitor 0 = center (primary), 1 = left, 2 = right.
+    const uint32_t numMon = 3;
+    freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, numMon);
+    freerdp_settings_set_uint32(settings, FreeRDP_MonitorDefArraySize, numMon);
+
+    auto* monitors = freerdp_settings_get_pointer_writable(settings, FreeRDP_MonitorDefArray);
+    auto* monArray = static_cast<rdpMonitor*>(monitors);
+    if (monArray) {
+        // Monitor 0: center (primary) at x=1920
+        monArray[0] = {};
+        monArray[0].x          = 1920;
+        monArray[0].y          = 0;
+        monArray[0].width      = 1920;
+        monArray[0].height     = 1080;
+        monArray[0].is_primary = 1;
+        monArray[0].attributes.physicalWidth  = 527;
+        monArray[0].attributes.physicalHeight = 296;
+        monArray[0].attributes.orientation    = ORIENTATION_LANDSCAPE;
+        monArray[0].attributes.desktopScaleFactor = 100;
+        monArray[0].attributes.deviceScaleFactor  = 100;
+
+        // Monitor 1: left at x=0
+        monArray[1] = {};
+        monArray[1].x          = 0;
+        monArray[1].y          = 0;
+        monArray[1].width      = 1920;
+        monArray[1].height     = 1080;
+        monArray[1].is_primary = 0;
+        monArray[1].attributes.physicalWidth  = 527;
+        monArray[1].attributes.physicalHeight = 296;
+        monArray[1].attributes.orientation    = ORIENTATION_LANDSCAPE;
+        monArray[1].attributes.desktopScaleFactor = 100;
+        monArray[1].attributes.deviceScaleFactor  = 100;
+
+        // Monitor 2: right at x=3840
+        monArray[2] = {};
+        monArray[2].x          = 3840;
+        monArray[2].y          = 0;
+        monArray[2].width      = 1920;
+        monArray[2].height     = 1080;
+        monArray[2].is_primary = 0;
+        monArray[2].attributes.physicalWidth  = 527;
+        monArray[2].attributes.physicalHeight = 296;
+        monArray[2].attributes.orientation    = ORIENTATION_LANDSCAPE;
+        monArray[2].attributes.desktopScaleFactor = 100;
+        monArray[2].attributes.deviceScaleFactor  = 100;
+
+        LOGI("RDP: 3 monitors declared (left=0, center=1920, right=3840)");
+    } else {
+        LOGE("RDP: failed to get MonitorDefArray pointer");
+    }
 }
 
 // ── RunEventLoop ──────────────────────────────────────────────────────────────
@@ -282,6 +343,11 @@ BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
         return FALSE;
     }
     ScreenLog("[OK] GDI initialized");
+
+    auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
+    if (ctx && ctx->self && ctx->self->inputForwarder_) {
+        ctx->self->inputForwarder_->Attach(instance);
+    }
     return TRUE;
 }
 
@@ -289,6 +355,9 @@ void RdpConnectionManager::OnPostDisconnect(freerdp* instance) {
     ScreenLog("[WARN] RDP disconnected");
     auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
     if (ctx && ctx->self) {
+        if (ctx->self->inputForwarder_) {
+            ctx->self->inputForwarder_->Detach();
+        }
         ctx->self->connected_.store(false);
     }
 }
@@ -313,6 +382,8 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
             ScreenLog("[OK] Display control ready");
             self->displayControl_.Attach(ctx->disp);
         }
+    } else if (strcmp(e->name, "rdpsnd") == 0) {
+        ScreenLog("[OK] Audio (rdpsnd) channel ready");
     } else if (strcmp(e->name, RDPGFX_DVC_CHANNEL_NAME) == 0) {
         ctx->gfx = static_cast<RdpgfxClientContext*>(e->pInterface);
         if (ctx->gfx) {
@@ -387,8 +458,7 @@ UINT RdpConnectionManager::OnGfxSurfaceCommand(RdpgfxClientContext* gfx,
         self->softwareFramePending_ = true;
         if (!self->softwareFallbackLogged_) {
             self->softwareFallbackLogged_ = true;
-            self->displayControl_.ActivateMonitorCount(1);
-            ScreenLog("[WARN] software GFX fallback on monitor[0]");
+            ScreenLog("[WARN] software GFX fallback (non-H.264 codec)");
         }
 
         if (self->prevSurfaceCommand_) {
@@ -623,20 +693,30 @@ void RdpConnectionManager::PushSoftwareFallbackFrame(RdpgfxClientContext* gfx) {
         return;
     }
 
-    VirtualMonitor* monitor = monitors_[0];
-    if (!monitor) {
-        ScreenLog("[ERR] monitor[0] unavailable for software fallback");
-        return;
-    }
+    const uint32_t gdiW = static_cast<uint32_t>(gdi->width);
+    const uint32_t gdiH = static_cast<uint32_t>(gdi->height);
+    const uint32_t stride = gdi->stride;
+    const uint32_t monW = 1920;
 
-    monitor->SubmitSoftwareFrame(gdi->primary_buffer,
-                                 static_cast<uint32_t>(gdi->width),
-                                 static_cast<uint32_t>(gdi->height),
-                                 gdi->stride);
+    // RDP desktop layout: monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840.
+    // Map each monitor to its horizontal crop region in the GDI buffer.
+    struct MonitorCrop { uint32_t idx; uint32_t offsetX; };
+    const MonitorCrop crops[] = {
+        {0, 1920},  // center (primary)
+        {1, 0},     // left
+        {2, 3840},  // right
+    };
 
-    if (++monitorFrameCount_[0] == 1) {
-        ScreenLog("[OK] monitor[0] first software GFX frame %ux%u",
-                  static_cast<uint32_t>(gdi->width),
-                  static_cast<uint32_t>(gdi->height));
+    for (const auto& crop : crops) {
+        if (crop.idx >= monitorCount_ || !monitors_[crop.idx]) continue;
+        if (crop.offsetX + monW > gdiW) continue;  // surface too narrow
+
+        const uint8_t* regionPtr = gdi->primary_buffer + static_cast<size_t>(crop.offsetX) * 4u;
+        monitors_[crop.idx]->SubmitSoftwareFrame(regionPtr, monW, gdiH, stride);
+
+        if (++monitorFrameCount_[crop.idx] == 1) {
+            ScreenLog("[OK] monitor[%u] first software GFX frame (crop x=%u %ux%u)",
+                      crop.idx, crop.offsetX, monW, gdiH);
+        }
     }
 }

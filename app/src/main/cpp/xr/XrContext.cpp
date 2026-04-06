@@ -7,6 +7,7 @@
 #include <vulkan/vulkan_core.h>
 
 #include <cstring>
+#include <cmath>
 #include <stdexcept>
 #include <vector>
 
@@ -20,6 +21,7 @@ XrContext::XrContext(android_app* app) : app_(app) {}
 XrContext::~XrContext() {
     if (hapticAction_     != XR_NULL_HANDLE) xrDestroyAction(hapticAction_);
     if (actionSet_        != XR_NULL_HANDLE) xrDestroyActionSet(actionSet_);
+    if (viewSpace_        != XR_NULL_HANDLE) xrDestroySpace(viewSpace_);
     if (worldSpace_       != XR_NULL_HANDLE) xrDestroySpace(worldSpace_);
     if (passthroughLayer_ != XR_NULL_HANDLE) pfnDestroyPassthroughLayerFB_(passthroughLayer_);
     if (passthrough_      != XR_NULL_HANDLE) pfnDestroyPassthroughFB_(passthrough_);
@@ -56,7 +58,11 @@ void XrContext::CreateInstance() {
         if (std::strcmp(ext.extensionName, "XR_FB_camera_access") == 0) {
             cameraAccessAvailable_ = true;
         }
+        if (std::strcmp(ext.extensionName, XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME) == 0) {
+            cylinderLayerAvailable_ = true;
+        }
     }
+    LOGI("XR_KHR_composition_layer_cylinder: %s", cylinderLayerAvailable_ ? "available" : "not available");
     LOGI("XR_FB_passthrough: %s", passthroughAvailable_ ? "available" : "not available");
     LOGI("XR_FB_camera_access: %s", cameraAccessAvailable_ ? "available" : "not available");
 
@@ -69,6 +75,9 @@ void XrContext::CreateInstance() {
     }
     if (cameraAccessAvailable_) {
         enabledExtensions.push_back("XR_FB_camera_access");
+    }
+    if (cylinderLayerAvailable_) {
+        enabledExtensions.push_back(XR_KHR_COMPOSITION_LAYER_CYLINDER_EXTENSION_NAME);
     }
 
     XrInstanceCreateInfoAndroidKHR androidInfo{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};
@@ -379,10 +388,19 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
                 xrDestroySpace(worldSpace_);
                 worldSpace_ = XR_NULL_HANDLE;
             }
+            if (viewSpace_ != XR_NULL_HANDLE) {
+                xrDestroySpace(viewSpace_);
+                viewSpace_ = XR_NULL_HANDLE;
+            }
             XrReferenceSpaceCreateInfo spaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
             spaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_STAGE;
             spaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
             XR_CHECK(xrCreateReferenceSpace(session_, &spaceInfo, &worldSpace_));
+
+            XrReferenceSpaceCreateInfo viewSpaceInfo{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};
+            viewSpaceInfo.referenceSpaceType = XR_REFERENCE_SPACE_TYPE_VIEW;
+            viewSpaceInfo.poseInReferenceSpace = {{0.f, 0.f, 0.f, 1.f}, {0.f, 0.f, 0.f}};
+            XR_CHECK(xrCreateReferenceSpace(session_, &viewSpaceInfo, &viewSpace_));
             break;
         }
         case XR_SESSION_STATE_FOCUSED:
@@ -391,6 +409,10 @@ void XrContext::HandleSessionStateChange(const XrEventDataSessionStateChanged& e
         case XR_SESSION_STATE_STOPPING:
             sessionRunning_ = false;
             sessionActive = false;
+            if (viewSpace_ != XR_NULL_HANDLE) {
+                xrDestroySpace(viewSpace_);
+                viewSpace_ = XR_NULL_HANDLE;
+            }
             if (worldSpace_ != XR_NULL_HANDLE) {
                 xrDestroySpace(worldSpace_);
                 worldSpace_ = XR_NULL_HANDLE;
@@ -448,4 +470,46 @@ bool XrContext::LocateViews(XrTime predictedTime, std::array<XrView, 2>& views) 
     uint32_t viewCount = 2;
     XR_CHECK(xrLocateViews(session_, &locateInfo, &viewState, viewCount, &viewCount, views.data()));
     return (viewState.viewStateFlags & XR_VIEW_STATE_ORIENTATION_VALID_BIT) != 0;
+}
+
+bool XrContext::LocateHeadPose(XrTime predictedTime, XrPosef& headPose) {
+    if (viewSpace_ != XR_NULL_HANDLE && worldSpace_ != XR_NULL_HANDLE) {
+        XrSpaceLocation location{XR_TYPE_SPACE_LOCATION};
+        if (XR_SUCCEEDED(xrLocateSpace(viewSpace_, worldSpace_, predictedTime, &location))) {
+            const XrSpaceLocationFlags requiredFlags =
+                XR_SPACE_LOCATION_POSITION_VALID_BIT |
+                XR_SPACE_LOCATION_ORIENTATION_VALID_BIT;
+            if ((location.locationFlags & requiredFlags) == requiredFlags) {
+                headPose = location.pose;
+                return true;
+            }
+        }
+    }
+
+    std::array<XrView, 2> views{XrView{XR_TYPE_VIEW}, XrView{XR_TYPE_VIEW}};
+    if (!LocateViews(predictedTime, views)) {
+        return false;
+    }
+
+    headPose.position = {
+        (views[0].pose.position.x + views[1].pose.position.x) * 0.5f,
+        (views[0].pose.position.y + views[1].pose.position.y) * 0.5f,
+        (views[0].pose.position.z + views[1].pose.position.z) * 0.5f
+    };
+
+    const XrQuaternionf q = views[0].pose.orientation;
+    const float lenSq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
+    if (lenSq <= 1e-6f) {
+        headPose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
+        return true;
+    }
+
+    const float invLen = 1.0f / std::sqrt(lenSq);
+    headPose.orientation = {
+        q.x * invLen,
+        q.y * invLen,
+        q.z * invLen,
+        q.w * invLen
+    };
+    return true;
 }

@@ -4,6 +4,7 @@
 #include "CameraManager.h"
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -31,6 +32,7 @@ public:
 
     bool IsRunning() const;
     bool HasResult() const { return hasResult_.load(); }
+    uint8_t GetActiveCameraPosition() const;
 
 private:
     std::unique_ptr<CameraManager> camera_;

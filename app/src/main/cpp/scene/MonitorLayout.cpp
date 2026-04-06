@@ -1,46 +1,162 @@
 #include "MonitorLayout.h"
+
 #include "../util/Logger.h"
 
 #include <algorithm>
 #include <cmath>
-#include <stdexcept>
+
+namespace {
+
+// ── Decagon geometry ─────────────────────────────────────────────────────────
+// 3 screens forming 3 consecutive sides of a regular 10-sided polygon.
+// Angle between adjacent screen centers as seen from the decagon center.
+constexpr float kDecagonStep = 2.0f * static_cast<float>(M_PI) / 10.0f;  // 36°
+// Distance from the viewer to the screen plane (meters).
+constexpr float kDecagonRadius = 2.6f;
+
+XrVector3f Add(XrVector3f a, XrVector3f b) {
+    return {a.x + b.x, a.y + b.y, a.z + b.z};
+}
+
+XrVector3f Sub(XrVector3f a, XrVector3f b) {
+    return {a.x - b.x, a.y - b.y, a.z - b.z};
+}
+
+XrVector3f Scale(XrVector3f v, float s) {
+    return {v.x * s, v.y * s, v.z * s};
+}
+
+float Dot(XrVector3f a, XrVector3f b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+XrVector3f Normalize(XrVector3f v, XrVector3f fallback) {
+    const float lenSq = Dot(v, v);
+    if (lenSq <= 1e-6f) {
+        return fallback;
+    }
+
+    const float invLen = 1.0f / std::sqrt(lenSq);
+    return {v.x * invLen, v.y * invLen, v.z * invLen};
+}
+
+XrVector3f RotateVector(const XrQuaternionf& q, XrVector3f v) {
+    const XrVector3f u{q.x, q.y, q.z};
+    const float s = q.w;
+
+    const XrVector3f crossUV{
+        u.y * v.z - u.z * v.y,
+        u.z * v.x - u.x * v.z,
+        u.x * v.y - u.y * v.x
+    };
+    const XrVector3f crossUCrossUV{
+        u.y * crossUV.z - u.z * crossUV.y,
+        u.z * crossUV.x - u.x * crossUV.z,
+        u.x * crossUV.y - u.y * crossUV.x
+    };
+
+    return Add(v, Add(Scale(crossUV, 2.0f * s), Scale(crossUCrossUV, 2.0f)));
+}
+
+// Quaternion multiply: result = a * b
+XrQuaternionf QuatMul(const XrQuaternionf& a, const XrQuaternionf& b) {
+    return {
+        a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y,
+        a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x,
+        a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w,
+        a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z
+    };
+}
+
+// Y-axis rotation quaternion from angle in radians.
+XrQuaternionf YawQuat(float yaw) {
+    const float half = yaw * 0.5f;
+    return {0.0f, std::sin(half), 0.0f, std::cos(half)};
+}
+
+// Yaw angle for each monitor on the decagonal arc.
+// Monitor 0 = center (0°), 1 = left (+36°), 2 = right (-36°).
+// Positive yaw rotates the screen's front face to the right (toward center
+// for the left screen), keeping all panels facing the viewer at the origin.
+float MonitorYaw(uint32_t index) {
+    switch (index) {
+        case 1:  return  kDecagonStep;  // left
+        case 2:  return -kDecagonStep;  // right
+        default: return  0.0f;          // center
+    }
+}
+
+// For cylinder layers the pose is at the cylinder center (the viewer).
+// All monitors share the same canonical position: the origin.
+XrVector3f CanonicalPosition([[maybe_unused]] uint32_t index) {
+    return {0.0f, 0.0f, 0.0f};
+}
+
+XrVector3f HeadForward(const XrQuaternionf& q) {
+    return RotateVector(q, {0.0f, 0.0f, -1.0f});
+}
+
+XrQuaternionf YawOnlyWallOrientation(XrVector3f horizontalForward) {
+    horizontalForward = Normalize(horizontalForward, {0.0f, 0.0f, -1.0f});
+    const float yaw = std::atan2(-horizontalForward.x, -horizontalForward.z);
+    const float halfYaw = yaw * 0.5f;
+    return {0.0f, std::sin(halfYaw), 0.0f, std::cos(halfYaw)};
+}
+
+}  // namespace
 
 MonitorLayout::MonitorLayout() {
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
-        monitors_[i].index        = i;
+        monitors_[i].index = i;
         monitors_[i].rdpSurfaceId = UINT32_MAX;
-        monitors_[i].active       = false;
+        monitors_[i].active = false;
     }
 }
 
 void MonitorLayout::BuildDefaultLayout() {
-    // Grid centre is at (0, 0, kDepth).
-    // Total grid width  = (kGridCols - 1) * kHSpacing = 3 * 2.0 = 6.0m
-    // Total grid height = (kGridRows - 1) * kVSpacing = 3 * 1.15 = 3.45m
-    // Top-left monitor centre: (-3.0, +1.725, kDepth)
-    const float xStart = -static_cast<float>(kGridCols - 1) * kHSpacing / 2.0f;
-    const float yStart =  static_cast<float>(kGridRows - 1) * kVSpacing / 2.0f;
-
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
-        const uint32_t col = i % kGridCols;
-        const uint32_t row = i / kGridCols;
-
         MonitorDescriptor& m = monitors_[i];
         m.index = i;
 
-        // World position: centred in the grid, at kDepth metres ahead.
-        float x = xStart + static_cast<float>(col) * kHSpacing;
-        float y = yStart - static_cast<float>(row) * kVSpacing;
-
-        // Identity quaternion — all monitors face the viewer (toward +Z).
-        m.worldPose.orientation = {0.0f, 0.0f, 0.0f, 1.0f};
-        m.worldPose.position    = {x, y, kDepth};
-        m.sizeMeters            = {1.92f, 1.08f};
-        m.forwardNormal         = {0.0f, 0.0f, 1.0f};  // points toward +Z (toward viewer)
+        const float yaw = MonitorYaw(i);
+        m.worldPose.position = CanonicalPosition(i);
+        m.worldPose.orientation = YawQuat(yaw);
+        m.sizeMeters = {1.92f, 1.08f};
+        // Normal points from screen toward the decagon center (the viewer).
+        m.forwardNormal = {std::sin(yaw), 0.0f, std::cos(yaw)};
     }
 
-    LOGI("MonitorLayout: 4×4 grid built — x∈[%.2f, %.2f] y∈[%.2f, %.2f] z=%.2f",
-         xStart, -xStart, -yStart, yStart, kDepth);
+    ApplyPrimaryAnchor();
+
+    LOGI("MonitorLayout: decagon arc (3 panels, R=%.2f, step=%.1f°)",
+         kDecagonRadius, kDecagonStep * 180.0f / static_cast<float>(M_PI));
+}
+
+void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
+    const bool hadPrimaryAnchor = hasPrimaryAnchor_;
+    const XrVector3f previousAnchorPosition = primaryAnchorPosition_;
+
+    XrVector3f horizontalForward = HeadForward(headPose.orientation);
+    horizontalForward.y = 0.0f;
+    horizontalForward = Normalize(horizontalForward, {0.0f, 0.0f, -1.0f});
+
+    primaryAnchorOrientation_ = YawOnlyWallOrientation(horizontalForward);
+    // Cylinder center is 0.5m behind the viewer so screens feel further away.
+    primaryAnchorPosition_ = Add(headPose.position, Scale(horizontalForward, -0.5f));
+    hasPrimaryAnchor_ = true;
+
+    BuildDefaultLayout();
+
+    const float dx = primaryAnchorPosition_.x - previousAnchorPosition.x;
+    const float dy = primaryAnchorPosition_.y - previousAnchorPosition.y;
+    const float dz = primaryAnchorPosition_.z - previousAnchorPosition.z;
+    const float moveSq = dx * dx + dy * dy + dz * dz;
+    if (!hadPrimaryAnchor || moveSq > 0.0025f) {
+        LOGI("MonitorLayout: primary anchored to scan heading at (%.2f, %.2f, %.2f)",
+             primaryAnchorPosition_.x,
+             primaryAnchorPosition_.y,
+             primaryAnchorPosition_.z);
+    }
 }
 
 const MonitorDescriptor& MonitorLayout::GetMonitor(uint32_t index) const {
@@ -56,7 +172,10 @@ std::span<const MonitorDescriptor> MonitorLayout::GetAllMonitors() const {
 }
 
 void MonitorLayout::BindSurface(uint32_t monitorIndex, uint32_t rdpSurfaceId) {
-    if (monitorIndex >= kMaxMonitors) return;
+    if (monitorIndex >= kMaxMonitors) {
+        return;
+    }
+
     monitors_[monitorIndex].rdpSurfaceId = rdpSurfaceId;
     LOGI("MonitorLayout: monitor %u bound to RDP surface %u", monitorIndex, rdpSurfaceId);
 }
@@ -64,22 +183,49 @@ void MonitorLayout::BindSurface(uint32_t monitorIndex, uint32_t rdpSurfaceId) {
 void MonitorLayout::SetActiveCount(uint32_t count) {
     const uint32_t capped = std::min(count, kMaxMonitors);
 
-    // Rebuild canonical positions first so switching between degraded and full
-    // layouts never leaves monitors stranded in an older fallback placement.
     BuildDefaultLayout();
 
-    // When the server exposes a single desktop, place it directly in front of
-    // the user instead of leaving monitor[0] in the top-left corner of the 4x4 grid.
-    if (capped == 1) {
+    if (capped == 1 && !hasPrimaryAnchor_) {
         monitors_[0].worldPose.position = {0.0f, 0.0f, kDepth};
     }
 
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
         monitors_[i].active = (i < capped);
     }
-    LOGI("MonitorLayout: %u monitor(s) active", capped);
+    const XrVector3f& primaryPos = monitors_[0].worldPose.position;
+    LOGI("MonitorLayout: %u monitor(s) active primary=(%.2f, %.2f, %.2f) anchored=%d",
+         capped,
+         primaryPos.x,
+         primaryPos.y,
+         primaryPos.z,
+         hasPrimaryAnchor_ ? 1 : 0);
 }
 
 void MonitorLayout::SetAllActive() {
     SetActiveCount(kMaxMonitors);
+}
+
+void MonitorLayout::ApplyPrimaryAnchor() {
+    if (!hasPrimaryAnchor_) {
+        return;
+    }
+
+    const XrVector3f canonicalPrimary = CanonicalPosition(0);
+
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        MonitorDescriptor& monitor = monitors_[i];
+
+        // Position: rotate the offset from primary around the anchor.
+        const XrVector3f relative = Sub(CanonicalPosition(i), canonicalPrimary);
+        monitor.worldPose.position = Add(
+            primaryAnchorPosition_,
+            RotateVector(primaryAnchorOrientation_, relative));
+
+        // Orientation: anchor yaw * per-monitor yaw on the decagonal arc.
+        const XrQuaternionf perMonitorYaw = YawQuat(MonitorYaw(i));
+        monitor.worldPose.orientation = QuatMul(primaryAnchorOrientation_, perMonitorYaw);
+
+        // Forward normal: from screen toward viewer (rotated).
+        monitor.forwardNormal = RotateVector(monitor.worldPose.orientation, {0.0f, 0.0f, 1.0f});
+    }
 }

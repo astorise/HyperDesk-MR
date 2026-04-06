@@ -12,6 +12,10 @@ static constexpr uint32_t kPhysHeightMm = 296;
 RdpDisplayControl::RdpDisplayControl(MonitorLayout& layout)
     : layout_(&layout) {}
 
+void RdpDisplayControl::SetMonitorConfigAppliedCallback(std::function<void(uint32_t)> callback) {
+    monitorConfigAppliedCallback_ = std::move(callback);
+}
+
 void RdpDisplayControl::Attach(DispClientContext* ctx) {
     ctx_         = ctx;
     ctx_->custom = this;  // store back-pointer for the static callback
@@ -78,6 +82,9 @@ UINT RdpDisplayControl::SendMonitorLayout(uint32_t monitorCount) {
 void RdpDisplayControl::ActivateMonitorCount(uint32_t monitorCount) {
     if (!layout_) return;
     layout_->SetActiveCount(monitorCount);
+    if (monitorConfigAppliedCallback_) {
+        monitorConfigAppliedCallback_(monitorCount);
+    }
 }
 
 std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT>
@@ -86,14 +93,20 @@ RdpDisplayControl::BuildLayoutPDU(uint32_t monitorCount) const {
     const uint32_t capped = std::min<uint32_t>(monitorCount, MonitorLayout::kMaxMonitors);
     entries.reserve(capped);
 
+    // Monitor 0 = center (primary), 1 = left, 2 = right.
     for (uint32_t i = 0; i < capped; ++i) {
-        const uint32_t col = i % MonitorLayout::kGridCols;
-        const uint32_t row = i / MonitorLayout::kGridCols;
+        INT32 left;
+        switch (i) {
+            case 0:  left = 1920;  break;  // center
+            case 1:  left = 0;     break;  // left
+            case 2:  left = 3840;  break;  // right
+            default: left = static_cast<INT32>(i * 1920); break;
+        }
 
         DISPLAY_CONTROL_MONITOR_LAYOUT m{};
         m.Flags              = (i == 0) ? DISPLAY_CONTROL_MONITOR_PRIMARY : 0;
-        m.Left               = static_cast<INT32>(col * 1920);
-        m.Top                = static_cast<INT32>(row * 1080);
+        m.Left               = left;
+        m.Top                = 0;
         m.Width              = 1920;
         m.Height             = 1080;
         m.PhysicalWidth      = kPhysWidthMm;
