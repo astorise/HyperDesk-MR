@@ -105,7 +105,6 @@ add_library(hyperdesk_mr SHARED
     rdp/RdpConnectionManager.cpp
     rdp/RdpDisplayControl.cpp
     rdp/RdpInputForwarder.cpp
-    rdp/jni_mouse_bridge.cpp
     rdp/EvdevMouseReader.cpp
     codec/MediaCodecDecoder.cpp
     codec/CodecSurfaceBridge.cpp

@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <stdexcept>
 
 EvdevMouseReader::EvdevMouseReader(RdpInputForwarder& forwarder)
     : forwarder_(forwarder) {}
@@ -92,6 +93,7 @@ void EvdevMouseReader::Stop() {
 void EvdevMouseReader::ReadLoop() {
     LOGI("EvdevMouseReader: read loop started");
 
+    try {
     int32_t accumX = 0, accumY = 0;
     int32_t accumWheel = 0;
 
@@ -148,6 +150,12 @@ void EvdevMouseReader::ReadLoop() {
                     break;
             }
         }
+    }
+
+    } catch (const std::exception& e) {
+        LOGE("EvdevMouseReader: exception in read loop: %s", e.what());
+    } catch (...) {
+        LOGE("EvdevMouseReader: unknown exception in read loop");
     }
 
     LOGI("EvdevMouseReader: read loop ended");

@@ -27,10 +27,10 @@
 
     <application
         android:label="HyperDesk MR"
-        android:hasCode="true">
+        android:hasCode="false">
 
         <activity
-            android:name="com.hyperdesk.mr.HyperDeskActivity"
+            android:name="android.app.NativeActivity"
             android:configChanges="density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTask"

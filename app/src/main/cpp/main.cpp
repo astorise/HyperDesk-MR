@@ -10,7 +10,6 @@
 #include "rdp/RdpDisplayControl.h"
 #include "rdp/RdpInputForwarder.h"
 #include "rdp/EvdevMouseReader.h"
-#include "rdp/jni_mouse_bridge.h"
 #include "camera/QrScanner.h"
 #include "scene/MonitorLayout.h"
 #include "scene/FrustumCuller.h"
@@ -178,7 +177,6 @@ void android_main(android_app* app) {
         static_cast<uint32_t>(state.monitorPtrs.size()));
     state.inputForwarder = std::make_unique<RdpInputForwarder>();
     state.rdpManager->SetInputForwarder(state.inputForwarder.get());
-    JniMouseBridge_SetForwarder(state.inputForwarder.get());
     state.evdevMouse = std::make_unique<EvdevMouseReader>(*state.inputForwarder);
     if (state.evdevMouse->Start()) {
         LOGI("EvdevMouseReader started — Bluetooth mouse active");
@@ -434,7 +432,6 @@ void android_main(android_app* app) {
 
     // ── Teardown ──────────────────────────────────────────────────────────────
     if (state.evdevMouse) state.evdevMouse->Stop();
-    JniMouseBridge_SetForwarder(nullptr);
     if (state.qrScanner) state.qrScanner->Stop();
     state.rdpManager->Disconnect();
     state.passthrough->Pause();
