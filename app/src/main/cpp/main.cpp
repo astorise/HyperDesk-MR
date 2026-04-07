@@ -75,6 +75,7 @@ struct AppState {
     // Reconnection state.
     RdpConnectionManager::ConnectionParams lastConnParams;
     bool                                   hasConnParams = false;
+    bool                                   wasEverConnected = false;
     uint64_t                               reconnectCooldownFrame = 0;
 };
 
@@ -407,8 +408,16 @@ void android_main(android_app* app) {
             state.xrContext->EndFrame(frameState, 0, nullptr);
         }
 
+        // ── Track connection state for auto-reconnect ──────────────────────
+        if (state.rdpManager->IsConnected()) {
+            state.wasEverConnected = true;
+        }
+
         // ── Auto-reconnect when RDP session drops ─────────────────────────
-        if (state.hasConnParams && !state.rdpManager->IsConnected()
+        // Only reconnect after a previously successful connection drops —
+        // never during the initial connect (wasEverConnected guards this).
+        if (state.hasConnParams && state.wasEverConnected
+            && !state.rdpManager->IsConnected()
             && frameCount > state.reconnectCooldownFrame) {
             LOGI("RDP disconnected — attempting reconnection");
             state.statusOverlay->AddLog("[WARN] RDP disconnected — reconnecting...");
