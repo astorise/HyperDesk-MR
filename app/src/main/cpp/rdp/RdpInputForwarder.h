@@ -23,6 +23,12 @@ public:
         cursorY_ = 540;
     }
 
+    // Set the Android window dimensions for coordinate mapping.
+    void SetWindowSize(uint32_t w, uint32_t h) {
+        windowW_ = w;
+        windowH_ = h;
+    }
+
     // Returns true if the event was consumed.
     bool OnInputEvent(AInputEvent* event);
 
@@ -56,6 +62,8 @@ private:
     std::atomic<freerdp*> instance_{nullptr};
     uint32_t desktopW_ = 5760;
     uint32_t desktopH_ = 1080;
+    uint32_t windowW_  = 0;  // Android window size (0 = not set yet)
+    uint32_t windowH_  = 0;
 
     // Internal absolute cursor position (updated by relative evdev deltas).
     std::mutex cursorMutex_;

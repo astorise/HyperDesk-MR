@@ -88,6 +88,12 @@ static void handle_app_cmd(android_app* app, int32_t cmd) {
     switch (cmd) {
         case APP_CMD_INIT_WINDOW:
             LOGI("APP_CMD_INIT_WINDOW");
+            if (app->window && state->inputForwarder) {
+                const uint32_t winW = ANativeWindow_getWidth(app->window);
+                const uint32_t winH = ANativeWindow_getHeight(app->window);
+                state->inputForwarder->SetWindowSize(winW, winH);
+                LOGI("Window size: %ux%u", winW, winH);
+            }
             break;
         case APP_CMD_TERM_WINDOW:
             LOGI("APP_CMD_TERM_WINDOW");
@@ -180,6 +186,12 @@ void android_main(android_app* app) {
         static_cast<uint32_t>(state.monitorPtrs.size()));
     state.inputForwarder = std::make_unique<RdpInputForwarder>();
     state.rdpManager->SetInputForwarder(state.inputForwarder.get());
+    if (app->window) {
+        const uint32_t winW = ANativeWindow_getWidth(app->window);
+        const uint32_t winH = ANativeWindow_getHeight(app->window);
+        state.inputForwarder->SetWindowSize(winW, winH);
+        LOGI("Window size at init: %ux%u", winW, winH);
+    }
     state.evdevMouse = std::make_unique<EvdevMouseReader>(*state.inputForwarder);
     if (state.evdevMouse->Start()) {
         LOGI("EvdevMouseReader started — Bluetooth mouse active");

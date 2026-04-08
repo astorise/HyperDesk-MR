@@ -70,11 +70,18 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
     const float rawX = AMotionEvent_getX(event, 0);
     const float rawY = AMotionEvent_getY(event, 0);
 
-    // Clamp to desktop bounds.
+    // Map Android window coordinates to RDP desktop coordinates.
+    float mappedX = rawX;
+    float mappedY = rawY;
+    if (windowW_ > 0 && windowH_ > 0) {
+        mappedX = rawX * static_cast<float>(desktopW_) / static_cast<float>(windowW_);
+        mappedY = rawY * static_cast<float>(desktopH_) / static_cast<float>(windowH_);
+    }
+
     const uint16_t x = static_cast<uint16_t>(
-        std::clamp(static_cast<int>(rawX), 0, static_cast<int>(desktopW_ - 1)));
+        std::clamp(static_cast<int>(mappedX), 0, static_cast<int>(desktopW_ - 1)));
     const uint16_t y = static_cast<uint16_t>(
-        std::clamp(static_cast<int>(rawY), 0, static_cast<int>(desktopH_ - 1)));
+        std::clamp(static_cast<int>(mappedY), 0, static_cast<int>(desktopH_ - 1)));
 
     // Keep internal cursor position in sync for the CursorOverlay.
     {
