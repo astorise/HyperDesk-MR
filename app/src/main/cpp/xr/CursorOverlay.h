@@ -34,8 +34,8 @@ public:
 
 private:
     static constexpr uint32_t kTexSize = 32;
-    // Cursor dot size in meters.
-    static constexpr float kCursorSize = 0.012f;
+    // Cursor dot size in meters (3cm — large enough to spot easily).
+    static constexpr float kCursorSize = 0.03f;
 
     XrContext& ctx_;
     XrSwapchain swapchain_ = XR_NULL_HANDLE;

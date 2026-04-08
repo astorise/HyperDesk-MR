@@ -76,7 +76,14 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
     const uint16_t y = static_cast<uint16_t>(
         std::clamp(static_cast<int>(rawY), 0, static_cast<int>(desktopH_ - 1)));
 
-    LOGD("InputForwarder::HandleMouseEvent: action=%d rawX=%.1f rawY=%.1f x=%u y=%u",
+    // Keep internal cursor position in sync for the CursorOverlay.
+    {
+        std::lock_guard<std::mutex> lock(cursorMutex_);
+        cursorX_ = x;
+        cursorY_ = y;
+    }
+
+    LOGI("InputForwarder::HandleMouseEvent: action=%d rawX=%.1f rawY=%.1f x=%u y=%u",
          action, rawX, rawY, x, y);
 
     switch (action) {

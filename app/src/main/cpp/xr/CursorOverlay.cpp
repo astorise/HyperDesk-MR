@@ -71,8 +71,11 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
 
     // 3D position on the cylinder surface, in the cylinder center's local frame.
     // Cylinder wraps around -Z axis, so angle 0 is straight ahead.
-    float cx = cylinderRadius * std::sin(cursorAngle);
-    float cz = -cylinderRadius * std::cos(cursorAngle);
+    // Pull 2cm toward the viewer to avoid z-fighting with the cylinder.
+    constexpr float kZOffset = 0.02f;
+    float r = cylinderRadius - kZOffset;
+    float cx = r * std::sin(cursorAngle);
+    float cz = -r * std::cos(cursorAngle);
 
     // Vertical position: map V to physical height.
     // Cylinder height = cylinderRadius * centralAngle / aspectRatio.
