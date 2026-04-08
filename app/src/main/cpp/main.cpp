@@ -201,7 +201,8 @@ void android_main(android_app* app) {
     state.statusOverlay->SetStatusLine(0, "scan: booting");
     state.compositor->SetStatusOverlay(state.statusOverlay.get());
 
-    state.cursorOverlay = std::make_unique<CursorOverlay>(*state.xrContext);
+    state.cursorOverlay = std::make_unique<CursorOverlay>(
+        *state.xrContext, app->activity->assetManager);
     state.compositor->SetCursorOverlay(state.cursorOverlay.get(), state.inputForwarder.get());
 
     // RDP error callback — show error text in the status overlay.

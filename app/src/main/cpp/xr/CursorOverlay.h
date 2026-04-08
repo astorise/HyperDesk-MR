@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
+#include <android/asset_manager.h>
 
 #include <cstdint>
 #include <mutex>
@@ -11,20 +12,18 @@
 
 class XrContext;
 
-// CursorOverlay renders a small white dot in 3D space to represent the
+// CursorOverlay renders a cursor icon in 3D space to represent the
 // mouse cursor position on the virtual monitor wall.  It owns its own
 // XrSwapchain and XrCompositionLayerQuad.
 class CursorOverlay {
 public:
-    CursorOverlay(XrContext& ctx);
+    CursorOverlay(XrContext& ctx, AAssetManager* assetManager);
     ~CursorOverlay();
 
     // Update cursor desktop-coordinate position.  Thread-safe.
     void SetPosition(int32_t desktopX, int32_t desktopY);
 
     // Returns the composition layer for this frame, or nullptr if hidden.
-    // cylinderCenter is the shared pose used for all cylinder monitor layers.
-    // cylinderRadius and centralAngle must match XrCompositor values.
     const XrCompositionLayerQuad* GetCompositionLayer(
         XrSpace worldSpace,
         const XrPosef& cylinderCenter,
@@ -33,8 +32,7 @@ public:
         float aspectRatio);
 
 private:
-    static constexpr uint32_t kTexSize = 32;
-    // Cursor dot size in meters (3cm — large enough to spot easily).
+    // Cursor icon size in meters.
     static constexpr float kCursorSize = 0.03f;
 
     XrContext& ctx_;
@@ -47,12 +45,19 @@ private:
     std::vector<VkImage> swapchainImages_;
     bool textureUploaded_ = false;
 
+    uint32_t texWidth_  = 0;
+    uint32_t texHeight_ = 0;
+
     std::mutex posMutex_;
     int32_t    desktopX_ = 2880;  // center of 5760
     int32_t    desktopY_ = 540;
 
+    bool LoadPngFromAssets(AAssetManager* mgr, const char* path);
     void CreateSwapchain();
     void CreateStagingBuffer();
-    void RenderCursorTexture();
     void UploadToSwapchainImage(VkImage image);
+
+    // Temporary storage for decoded PNG pixels (cleared after staging upload).
+    std::vector<uint8_t> decodedPixels_;
+    size_t decodedStride_ = 0;
 };

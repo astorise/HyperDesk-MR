@@ -158,4 +158,5 @@ target_link_libraries(hyperdesk_mr
         ${nativewindow-lib}
         ${opensles-lib}
         ${z-lib}
+        jnigraphics
 )

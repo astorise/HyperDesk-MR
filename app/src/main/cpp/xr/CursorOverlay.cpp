@@ -3,13 +3,19 @@
 #include "../util/Logger.h"
 #include "../util/Check.h"
 
+#include <android/imagedecoder.h>
+
 #include <cmath>
 #include <cstring>
 
-CursorOverlay::CursorOverlay(XrContext& ctx) : ctx_(ctx) {
+CursorOverlay::CursorOverlay(XrContext& ctx, AAssetManager* assetManager)
+    : ctx_(ctx) {
+    if (!LoadPngFromAssets(assetManager, "cursor.png")) {
+        LOGE("CursorOverlay: failed to load cursor.png from assets");
+        return;
+    }
     CreateSwapchain();
     CreateStagingBuffer();
-    RenderCursorTexture();
 }
 
 CursorOverlay::~CursorOverlay() {
@@ -17,6 +23,53 @@ CursorOverlay::~CursorOverlay() {
     if (stagingBuffer_)  vkDestroyBuffer(dev, stagingBuffer_, nullptr);
     if (stagingMemory_)  vkFreeMemory(dev, stagingMemory_, nullptr);
     if (swapchain_ != XR_NULL_HANDLE) xrDestroySwapchain(swapchain_);
+}
+
+bool CursorOverlay::LoadPngFromAssets(AAssetManager* mgr, const char* path) {
+    AAsset* asset = AAssetManager_open(mgr, path, AASSET_MODE_BUFFER);
+    if (!asset) {
+        LOGE("CursorOverlay: asset '%s' not found", path);
+        return false;
+    }
+
+    AImageDecoder* decoder = nullptr;
+    int result = AImageDecoder_createFromAAsset(asset, &decoder);
+    if (result != ANDROID_IMAGE_DECODER_SUCCESS || !decoder) {
+        LOGE("CursorOverlay: AImageDecoder_createFromAAsset failed: %d", result);
+        AAsset_close(asset);
+        return false;
+    }
+
+    // Force RGBA_8888 output.
+    AImageDecoder_setAndroidBitmapFormat(decoder, ANDROID_BITMAP_FORMAT_RGBA_8888);
+
+    const AImageDecoderHeaderInfo* info = AImageDecoder_getHeaderInfo(decoder);
+    texWidth_  = AImageDecoderHeaderInfo_getWidth(info);
+    texHeight_ = AImageDecoderHeaderInfo_getHeight(info);
+    const size_t stride = AImageDecoder_getMinimumStride(decoder);
+
+    LOGI("CursorOverlay: loaded %s (%ux%u, stride=%zu)", path, texWidth_, texHeight_, stride);
+
+    // Decode into a temporary buffer — will be copied to staging later.
+    std::vector<uint8_t> pixels(stride * texHeight_);
+    result = AImageDecoder_decodeImage(decoder, pixels.data(), stride, pixels.size());
+    AImageDecoder_delete(decoder);
+    AAsset_close(asset);
+
+    if (result != ANDROID_IMAGE_DECODER_SUCCESS) {
+        LOGE("CursorOverlay: AImageDecoder_decodeImage failed: %d", result);
+        return false;
+    }
+
+    // Store decoded pixels for later upload.  We'll copy to staging buffer
+    // after CreateStagingBuffer is called.
+    // For now, stash in a member — we'll copy in CreateStagingBuffer.
+    // Actually, create staging first then copy.
+    // We'll just hold them temporarily and copy after staging is ready.
+    // Use a simple approach: store the decoded pixels and copy in the upload step.
+    decodedPixels_ = std::move(pixels);
+    decodedStride_ = stride;
+    return true;
 }
 
 void CursorOverlay::SetPosition(int32_t desktopX, int32_t desktopY) {
@@ -32,6 +85,8 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         float centralAngle,
         float aspectRatio) {
 
+    if (texWidth_ == 0 || texHeight_ == 0) return nullptr;
+
     int32_t dx, dy;
     {
         std::lock_guard lock(posMutex_);
@@ -40,7 +95,6 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     }
 
     // Desktop layout: monitor 1 @ x=[0,1920), monitor 0 @ x=[1920,3840), monitor 2 @ x=[3840,5760).
-    // Map to monitor index and local U coordinate [0,1].
     int monitorIdx;
     float localU;
     if (dx < 1920) {
@@ -55,37 +109,28 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     }
     float localV = static_cast<float>(dy) / 1080.0f;
 
-    // Yaw angles for each monitor (matching MonitorLayout::MonitorYaw).
-    constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;  // 36°
+    // Yaw angles matching MonitorLayout::MonitorYaw.
+    constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;
     float monitorYaw;
     switch (monitorIdx) {
-        case 1:  monitorYaw =  kDecagonStep; break;  // left
-        case 2:  monitorYaw = -kDecagonStep; break;  // right
-        default: monitorYaw =  0.0f;         break;  // center
+        case 1:  monitorYaw =  kDecagonStep; break;
+        case 2:  monitorYaw = -kDecagonStep; break;
+        default: monitorYaw =  0.0f;         break;
     }
 
-    // Cursor angle on the cylinder: monitor center yaw + offset within the panel.
-    // U=0 is left edge of the panel, U=1 is right edge.
-    // The cylinder's central angle is kDecagonStep (36°), so U maps to [-half, +half].
     float cursorAngle = monitorYaw + (localU - 0.5f) * centralAngle;
 
-    // 3D position on the cylinder surface, in the cylinder center's local frame.
-    // Cylinder wraps around -Z axis, so angle 0 is straight ahead.
-    // Pull 2cm toward the viewer to avoid z-fighting with the cylinder.
+    // 3D position on cylinder surface, pulled 2cm toward viewer.
     constexpr float kZOffset = 0.02f;
     float r = cylinderRadius - kZOffset;
     float cx = r * std::sin(cursorAngle);
     float cz = -r * std::cos(cursorAngle);
 
-    // Vertical position: map V to physical height.
-    // Cylinder height = cylinderRadius * centralAngle / aspectRatio.
     float cylinderHeight = cylinderRadius * centralAngle / aspectRatio;
     float cy = (0.5f - localV) * cylinderHeight;
 
-    // Transform from cylinder-local to world space using the cylinder center pose.
-    // Rotate the local offset by the cylinder center's orientation.
+    // Rotate by cylinder center orientation.
     const auto& q = cylinderCenter.orientation;
-    // Quaternion rotation of (cx, cy, cz).
     float ux = q.x, uy = q.y, uz = q.z, uw = q.w;
     float crossX = uy * cz - uz * cy;
     float crossY = uz * cx - ux * cz;
@@ -121,18 +166,19 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     XrSwapchainSubImage sub{};
     sub.swapchain         = swapchain_;
     sub.imageRect.offset  = {0, 0};
-    sub.imageRect.extent  = {static_cast<int32_t>(kTexSize), static_cast<int32_t>(kTexSize)};
+    sub.imageRect.extent  = {static_cast<int32_t>(texWidth_), static_cast<int32_t>(texHeight_)};
     sub.imageArrayIndex   = 0;
     compositionLayer_.subImage = sub;
 
+    // Position: cursor hotspot is at the top-left of the icon.
+    // Offset by half the icon size so the tip of the arrow aligns with the point.
     compositionLayer_.pose.position    = {
         cylinderCenter.position.x + wx,
         cylinderCenter.position.y + wy,
         cylinderCenter.position.z + wz
     };
 
-    // Orient the cursor quad to face the cylinder center (billboard toward viewer).
-    // The face normal should point from the surface back toward the cylinder center.
+    // Orient to face the cylinder center.
     float faceYaw = std::atan2(-wx, -wz);
     float halfYaw = faceYaw * 0.5f;
     compositionLayer_.pose.orientation = {0.0f, std::sin(halfYaw), 0.0f, std::cos(halfYaw)};
@@ -154,8 +200,8 @@ void CursorOverlay::CreateSwapchain() {
                        XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
     info.format      = VK_FORMAT_R8G8B8A8_UNORM;
     info.sampleCount = 1;
-    info.width       = kTexSize;
-    info.height      = kTexSize;
+    info.width       = texWidth_;
+    info.height      = texHeight_;
     info.faceCount   = 1;
     info.arraySize   = 1;
     info.mipCount    = 1;
@@ -172,12 +218,12 @@ void CursorOverlay::CreateSwapchain() {
     for (uint32_t i = 0; i < imageCount; ++i)
         swapchainImages_[i] = images[i].image;
 
-    LOGD("CursorOverlay: swapchain created with %u images", imageCount);
+    LOGD("CursorOverlay: swapchain %ux%u with %u images", texWidth_, texHeight_, imageCount);
 }
 
 void CursorOverlay::CreateStagingBuffer() {
     VkDevice dev = ctx_.GetVkDevice();
-    VkDeviceSize bufferSize = kTexSize * kTexSize * 4;
+    VkDeviceSize bufferSize = texWidth_ * texHeight_ * 4;
 
     VkBufferCreateInfo bufInfo{VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO};
     bufInfo.size  = bufferSize;
@@ -207,33 +253,19 @@ void CursorOverlay::CreateStagingBuffer() {
     VK_CHECK(vkAllocateMemory(dev, &allocInfo, nullptr, &stagingMemory_));
     VK_CHECK(vkBindBufferMemory(dev, stagingBuffer_, stagingMemory_, 0));
     VK_CHECK(vkMapMemory(dev, stagingMemory_, 0, bufferSize, 0, &stagingMapped_));
-}
 
-void CursorOverlay::RenderCursorTexture() {
-    auto* rgba = static_cast<uint8_t*>(stagingMapped_);
-    const float center = kTexSize * 0.5f;
-    const float outerR = kTexSize * 0.5f;
-    const float innerR = outerR - 2.0f;
-
-    for (uint32_t y = 0; y < kTexSize; ++y) {
-        for (uint32_t x = 0; x < kTexSize; ++x) {
-            float dx = static_cast<float>(x) + 0.5f - center;
-            float dy = static_cast<float>(y) + 0.5f - center;
-            float dist = std::sqrt(dx * dx + dy * dy);
-            uint8_t* px = &rgba[(y * kTexSize + x) * 4];
-
-            if (dist <= innerR) {
-                // White filled center.
-                px[0] = 255; px[1] = 255; px[2] = 255; px[3] = 240;
-            } else if (dist <= outerR) {
-                // Anti-aliased edge.
-                float alpha = 1.0f - (dist - innerR) / (outerR - innerR);
-                px[0] = 255; px[1] = 255; px[2] = 255;
-                px[3] = static_cast<uint8_t>(alpha * 240.0f);
-            } else {
-                px[0] = 0; px[1] = 0; px[2] = 0; px[3] = 0;
-            }
+    // Copy decoded PNG pixels to staging buffer.
+    if (!decodedPixels_.empty()) {
+        auto* dst = static_cast<uint8_t*>(stagingMapped_);
+        const uint32_t dstStride = texWidth_ * 4;
+        for (uint32_t row = 0; row < texHeight_; ++row) {
+            memcpy(dst + row * dstStride,
+                   decodedPixels_.data() + row * decodedStride_,
+                   dstStride);
         }
+        // Free decoded pixels — no longer needed.
+        decodedPixels_.clear();
+        decodedPixels_.shrink_to_fit();
     }
 }
 
@@ -258,7 +290,6 @@ void CursorOverlay::UploadToSwapchainImage(VkImage image) {
     beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     VK_CHECK(vkBeginCommandBuffer(cmd, &beginInfo));
 
-    // Transition image to TRANSFER_DST.
     VkImageMemoryBarrier barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER};
     barrier.oldLayout           = VK_IMAGE_LAYOUT_UNDEFINED;
     barrier.newLayout           = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
@@ -274,11 +305,10 @@ void CursorOverlay::UploadToSwapchainImage(VkImage image) {
 
     VkBufferImageCopy region{};
     region.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1};
-    region.imageExtent      = {kTexSize, kTexSize, 1};
+    region.imageExtent      = {texWidth_, texHeight_, 1};
     vkCmdCopyBufferToImage(cmd, stagingBuffer_, image,
                            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
-    // Transition back to COLOR_ATTACHMENT_OPTIMAL for sampling.
     barrier.oldLayout     = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
     barrier.newLayout     = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
     barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
