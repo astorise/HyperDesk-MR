@@ -606,8 +606,33 @@ UINT RdpConnectionManager::OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
         return ERROR_INTERNAL_ERROR;
     }
 
-    ScreenLog("[OK] Surface %u @ (%d,%d)",
-              pdu->surfaceId, pdu->outputOriginX, pdu->outputOriginY);
+    // Use outputOriginX to map the surface to the correct VR monitor.
+    // RDP desktop layout: monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840.
+    uint32_t monitorIdx = UINT32_MAX;
+    if (pdu->outputOriginX < 1920) {
+        monitorIdx = 1;  // left
+    } else if (pdu->outputOriginX < 3840) {
+        monitorIdx = 0;  // center (primary)
+    } else {
+        monitorIdx = 2;  // right
+    }
+
+    // Find the slot for this surfaceId and reassign its monitor.
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        if (self->surfaceIds_[i] == pdu->surfaceId) {
+            const uint32_t prevMon = self->surfaceToMonitor_[i];
+            self->surfaceToMonitor_[i] = monitorIdx;
+            if (prevMon != monitorIdx) {
+                ScreenLog("[OK] Surface %u remapped: monitor[%u] -> monitor[%u] @ (%d,%d)",
+                          pdu->surfaceId, prevMon, monitorIdx,
+                          pdu->outputOriginX, pdu->outputOriginY);
+            }
+            break;
+        }
+    }
+
+    ScreenLog("[OK] Surface %u @ (%d,%d) -> monitor[%u]",
+              pdu->surfaceId, pdu->outputOriginX, pdu->outputOriginY, monitorIdx);
 
     if (self->prevMapSurfaceToOutput_) {
         return self->prevMapSurfaceToOutput_(gfx, pdu);
@@ -623,9 +648,26 @@ UINT RdpConnectionManager::OnGfxSurfaceToScaledOutput(
         return ERROR_INTERNAL_ERROR;
     }
 
-    ScreenLog("[OK] Surface %u scaled %ux%u @ (%d,%d)",
+    // Same desktop-position-based mapping as OnGfxSurfaceToOutput.
+    uint32_t monitorIdx = UINT32_MAX;
+    if (pdu->outputOriginX < 1920) {
+        monitorIdx = 1;
+    } else if (pdu->outputOriginX < 3840) {
+        monitorIdx = 0;
+    } else {
+        monitorIdx = 2;
+    }
+
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        if (self->surfaceIds_[i] == pdu->surfaceId) {
+            self->surfaceToMonitor_[i] = monitorIdx;
+            break;
+        }
+    }
+
+    ScreenLog("[OK] Surface %u scaled %ux%u @ (%d,%d) -> monitor[%u]",
               pdu->surfaceId, pdu->targetWidth, pdu->targetHeight,
-              pdu->outputOriginX, pdu->outputOriginY);
+              pdu->outputOriginX, pdu->outputOriginY, monitorIdx);
 
     if (self->prevMapSurfaceToScaledOutput_) {
         return self->prevMapSurfaceToScaledOutput_(gfx, pdu);
