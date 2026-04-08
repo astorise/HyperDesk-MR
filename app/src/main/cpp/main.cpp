@@ -6,6 +6,7 @@
 #include "xr/XrPassthrough.h"
 #include "xr/XrCompositor.h"
 #include "xr/StatusOverlay.h"
+#include "xr/CursorOverlay.h"
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
 #include "rdp/RdpInputForwarder.h"
@@ -47,6 +48,7 @@ struct AppState {
 
     std::unique_ptr<XrCompositor>         compositor;
     std::unique_ptr<StatusOverlay>        statusOverlay;
+    std::unique_ptr<CursorOverlay>        cursorOverlay;
     std::unique_ptr<QrScanner>            qrScanner;
 
     std::mutex                            latestHeadPoseMutex;
@@ -198,6 +200,9 @@ void android_main(android_app* app) {
     state.statusOverlay->AddLog("HyperDesk MR ready");
     state.statusOverlay->SetStatusLine(0, "scan: booting");
     state.compositor->SetStatusOverlay(state.statusOverlay.get());
+
+    state.cursorOverlay = std::make_unique<CursorOverlay>(*state.xrContext);
+    state.compositor->SetCursorOverlay(state.cursorOverlay.get(), state.inputForwarder.get());
 
     // RDP error callback — show error text in the status overlay.
     state.rdpManager->SetErrorCallback([&state](uint32_t errorCode) {

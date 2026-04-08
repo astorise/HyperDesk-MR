@@ -102,6 +102,7 @@ add_library(hyperdesk_mr SHARED
     xr/XrPassthrough.cpp
     xr/XrCompositor.cpp
     xr/StatusOverlay.cpp
+    xr/CursorOverlay.cpp
     rdp/RdpConnectionManager.cpp
     rdp/RdpDisplayControl.cpp
     rdp/RdpInputForwarder.cpp

@@ -3,7 +3,9 @@
 #include "XrContext.h"
 #include "XrPassthrough.h"
 #include "StatusOverlay.h"
+#include "CursorOverlay.h"
 #include "../codec/MediaCodecDecoder.h"
+#include "../rdp/RdpInputForwarder.h"
 #include "../scene/FrustumCuller.h"
 #include "../scene/MonitorLayout.h"
 #include "../scene/VirtualMonitor.h"
@@ -75,6 +77,28 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
 
         layerPtrs_[layerCount++] =
             reinterpret_cast<const XrCompositionLayerBaseHeader*>(layer);
+    }
+
+    // Cursor overlay — render after monitors so it appears on top.
+    if (cursorOverlay_ && inputForwarder_) {
+        int32_t cx, cy;
+        inputForwarder_->GetCursorPosition(cx, cy);
+        cursorOverlay_->SetPosition(cx, cy);
+
+        // Use monitor 0's pose as the cylinder center (all monitors share the same center).
+        const MonitorDescriptor& mon0 = layout_.GetMonitor(0);
+        if (mon0.active) {
+            constexpr float kCylinderRadius = 1.6f;
+            constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;
+            constexpr float kAspectRatio = 16.0f / 9.0f;
+
+            if (auto* cursorLayer = cursorOverlay_->GetCompositionLayer(
+                    ctx_.GetWorldSpace(), mon0.worldPose,
+                    kCylinderRadius, kDecagonStep, kAspectRatio)) {
+                layerPtrs_[layerCount++] =
+                    reinterpret_cast<const XrCompositionLayerBaseHeader*>(cursorLayer);
+            }
+        }
     }
 
     ctx_.EndFrame(frameState, layerCount, layerPtrs_.data());

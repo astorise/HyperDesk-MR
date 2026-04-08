@@ -34,10 +34,17 @@ public:
     // Wheel scroll (positive = up, negative = down).
     void SendMouseWheel(int32_t clicks);
 
-    // Public accessors for the JNI mouse bridge.
+    // Public accessors.
     rdpInput* GetInputPublic() const { return GetInput(); }
     uint32_t GetDesktopW() const { return desktopW_; }
     uint32_t GetDesktopH() const { return desktopH_; }
+
+    // Returns the current absolute cursor position (thread-safe).
+    void GetCursorPosition(int32_t& x, int32_t& y) {
+        std::lock_guard<std::mutex> lock(cursorMutex_);
+        x = cursorX_;
+        y = cursorY_;
+    }
 
 private:
     bool HandleKeyEvent(AInputEvent* event);
