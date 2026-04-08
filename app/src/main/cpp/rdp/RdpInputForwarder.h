@@ -23,12 +23,6 @@ public:
         cursorY_ = 540;
     }
 
-    // Set the Android window dimensions for coordinate mapping.
-    void SetWindowSize(uint32_t w, uint32_t h) {
-        windowW_ = w;
-        windowH_ = h;
-    }
-
     // Returns true if the event was consumed.
     bool OnInputEvent(AInputEvent* event);
 
@@ -62,11 +56,18 @@ private:
     std::atomic<freerdp*> instance_{nullptr};
     uint32_t desktopW_ = 5760;
     uint32_t desktopH_ = 1080;
-    uint32_t windowW_  = 0;  // Android window size (0 = not set yet)
-    uint32_t windowH_  = 0;
 
-    // Internal absolute cursor position (updated by relative evdev deltas).
+    // Internal absolute cursor position (updated by relative deltas).
     std::mutex cursorMutex_;
     int32_t cursorX_ = 2880;  // center of 5760
     int32_t cursorY_ = 540;
+
+    // Previous Android mouse position for delta computation.
+    float prevRawX_ = -1.0f;
+    float prevRawY_ = -1.0f;
+
+    // Sensitivity multiplier: Android window is small (~1280x800) but
+    // desktop is large (5760x1080). Scale deltas so full mouse sweep
+    // covers the entire desktop.
+    static constexpr float kMouseSensitivity = 4.5f;
 };

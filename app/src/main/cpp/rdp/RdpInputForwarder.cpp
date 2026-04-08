@@ -70,28 +70,25 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
     const float rawX = AMotionEvent_getX(event, 0);
     const float rawY = AMotionEvent_getY(event, 0);
 
-    // Map Android window coordinates to RDP desktop coordinates.
-    float mappedX = rawX;
-    float mappedY = rawY;
-    if (windowW_ > 0 && windowH_ > 0) {
-        mappedX = rawX * static_cast<float>(desktopW_) / static_cast<float>(windowW_);
-        mappedY = rawY * static_cast<float>(desktopH_) / static_cast<float>(windowH_);
-    }
-
-    const uint16_t x = static_cast<uint16_t>(
-        std::clamp(static_cast<int>(mappedX), 0, static_cast<int>(desktopW_ - 1)));
-    const uint16_t y = static_cast<uint16_t>(
-        std::clamp(static_cast<int>(mappedY), 0, static_cast<int>(desktopH_ - 1)));
-
-    // Keep internal cursor position in sync for the CursorOverlay.
+    // Compute delta from previous position and accumulate into the internal
+    // absolute cursor.  This decouples us from the Android window size and
+    // lets the cursor traverse the entire 5760x1080 RDP desktop.
+    uint16_t x, y;
     {
         std::lock_guard<std::mutex> lock(cursorMutex_);
-        cursorX_ = x;
-        cursorY_ = y;
+        if (prevRawX_ >= 0.0f && prevRawY_ >= 0.0f) {
+            const float dx = (rawX - prevRawX_) * kMouseSensitivity;
+            const float dy = (rawY - prevRawY_) * kMouseSensitivity;
+            cursorX_ = std::clamp(cursorX_ + static_cast<int32_t>(dx),
+                                  0, static_cast<int32_t>(desktopW_ - 1));
+            cursorY_ = std::clamp(cursorY_ + static_cast<int32_t>(dy),
+                                  0, static_cast<int32_t>(desktopH_ - 1));
+        }
+        prevRawX_ = rawX;
+        prevRawY_ = rawY;
+        x = static_cast<uint16_t>(cursorX_);
+        y = static_cast<uint16_t>(cursorY_);
     }
-
-    LOGI("InputForwarder::HandleMouseEvent: action=%d rawX=%.1f rawY=%.1f x=%u y=%u",
-         action, rawX, rawY, x, y);
 
     switch (action) {
         case AMOTION_EVENT_ACTION_HOVER_MOVE:
@@ -99,24 +96,22 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
             freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, x, y);
             break;
 
+        case AMOTION_EVENT_ACTION_DOWN:
         case AMOTION_EVENT_ACTION_BUTTON_PRESS: {
             const int32_t btn = AMotionEvent_getButtonState(event);
             uint16_t flags = PTR_FLAGS_DOWN;
             if (btn & AMOTION_EVENT_BUTTON_PRIMARY)   flags |= PTR_FLAGS_BUTTON1;
             if (btn & AMOTION_EVENT_BUTTON_SECONDARY) flags |= PTR_FLAGS_BUTTON2;
             if (btn & AMOTION_EVENT_BUTTON_TERTIARY)  flags |= PTR_FLAGS_BUTTON3;
+            if (flags == PTR_FLAGS_DOWN) flags |= PTR_FLAGS_BUTTON1;
             freerdp_input_send_mouse_event(input, flags, x, y);
             break;
         }
 
+        case AMOTION_EVENT_ACTION_UP:
         case AMOTION_EVENT_ACTION_BUTTON_RELEASE: {
-            const int32_t btn = AMotionEvent_getButtonState(event);
-            uint16_t flags = 0;
-            if (!(btn & AMOTION_EVENT_BUTTON_PRIMARY))   flags |= PTR_FLAGS_BUTTON1;
-            if (!(btn & AMOTION_EVENT_BUTTON_SECONDARY)) flags |= PTR_FLAGS_BUTTON2;
-            if (!(btn & AMOTION_EVENT_BUTTON_TERTIARY))  flags |= PTR_FLAGS_BUTTON3;
-            if (flags == 0) flags = PTR_FLAGS_BUTTON1;
-            freerdp_input_send_mouse_event(input, flags, x, y);
+            // Send release for left button by default.
+            freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON1, x, y);
             break;
         }
 
@@ -145,6 +140,16 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
             }
             break;
         }
+
+        case AMOTION_EVENT_ACTION_HOVER_ENTER:
+        case AMOTION_EVENT_ACTION_HOVER_EXIT:
+            // Reset previous position on enter/exit to avoid a jump.
+            {
+                std::lock_guard<std::mutex> lock(cursorMutex_);
+                prevRawX_ = rawX;
+                prevRawY_ = rawY;
+            }
+            break;
 
         default:
             return false;
