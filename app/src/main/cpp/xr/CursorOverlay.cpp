@@ -204,16 +204,21 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     float halfYaw = faceYaw * 0.5f;
     compositionLayer_.pose.orientation = {0.0f, std::sin(halfYaw), 0.0f, std::cos(halfYaw)};
 
-    // Hotspot is at the top-left of the arrow icon.  Shift the quad so
-    // the top-left corner (not its center) sits at the cursor 3D position.
-    // The shift is half the quad size: right (+X local) and down (-Y local).
-    float halfSize = kCursorSize * 0.5f;
+    // Hotspot is at pixel (18, 5) on the 24x24 icon, i.e. offset (+6, -7)
+    // from the image center.  Shift the quad so that pixel aligns with the
+    // cursor 3D position.  In 3D local-quad space the hotspot offset is:
+    //   localX = +6/24 * kCursorSize  (right of center)
+    //   localY = +7/24 * kCursorSize  (above center — image Y is flipped)
+    // Move the quad in the opposite direction to compensate.
+    constexpr float kHotspotLocalX = -(6.0f / 24.0f) * kCursorSize;
+    constexpr float kHotspotLocalY = -(7.0f / 24.0f) * kCursorSize;
     float cosYaw = std::cos(faceYaw);
     float sinYaw = std::sin(faceYaw);
+    // Local right in world = (cosYaw, 0, sinYaw)
     compositionLayer_.pose.position    = {
-        cylinderCenter.position.x + wx + halfSize * cosYaw,
-        cylinderCenter.position.y + wy - halfSize,
-        cylinderCenter.position.z + wz + halfSize * sinYaw
+        cylinderCenter.position.x + wx + kHotspotLocalX * cosYaw,
+        cylinderCenter.position.y + wy + kHotspotLocalY,
+        cylinderCenter.position.z + wz + kHotspotLocalX * sinYaw
     };
 
     compositionLayer_.size = {kCursorSize, kCursorSize};
