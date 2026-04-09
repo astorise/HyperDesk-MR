@@ -607,14 +607,14 @@ UINT RdpConnectionManager::OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
     }
 
     // Use outputOriginX to map the surface to the correct VR monitor.
-    // RDP desktop layout: monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840.
+    // RDP desktop layout: monitor 2 @ x=0, monitor 0 @ x=1920, monitor 1 @ x=3840.
     uint32_t monitorIdx = UINT32_MAX;
     if (pdu->outputOriginX < 1920) {
-        monitorIdx = 1;  // left
+        monitorIdx = 2;  // right
     } else if (pdu->outputOriginX < 3840) {
         monitorIdx = 0;  // center (primary)
     } else {
-        monitorIdx = 2;  // right
+        monitorIdx = 1;  // left
     }
 
     // Find the slot for this surfaceId and reassign its monitor.
@@ -651,11 +651,11 @@ UINT RdpConnectionManager::OnGfxSurfaceToScaledOutput(
     // Same desktop-position-based mapping as OnGfxSurfaceToOutput.
     uint32_t monitorIdx = UINT32_MAX;
     if (pdu->outputOriginX < 1920) {
-        monitorIdx = 1;
+        monitorIdx = 2;  // right
     } else if (pdu->outputOriginX < 3840) {
-        monitorIdx = 0;
+        monitorIdx = 0;  // center
     } else {
-        monitorIdx = 2;
+        monitorIdx = 1;  // left
     }
 
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {

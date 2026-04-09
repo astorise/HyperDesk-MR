@@ -128,17 +128,17 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         dy = desktopY_;
     }
 
-    // Desktop layout: monitor 1 @ x=[0,1920), monitor 0 @ x=[1920,3840), monitor 2 @ x=[3840,5760).
+    // Desktop layout: monitor 2 @ x=[0,1920), monitor 0 @ x=[1920,3840), monitor 1 @ x=[3840,5760).
     int monitorIdx;
     float localU;
     if (dx < 1920) {
-        monitorIdx = 1;  // left
+        monitorIdx = 2;  // right
         localU = static_cast<float>(dx) / 1920.0f;
     } else if (dx < 3840) {
         monitorIdx = 0;  // center
         localU = static_cast<float>(dx - 1920) / 1920.0f;
     } else {
-        monitorIdx = 2;  // right
+        monitorIdx = 1;  // left
         localU = static_cast<float>(dx - 3840) / 1920.0f;
     }
     float localV = static_cast<float>(dy) / 1080.0f;
