@@ -104,14 +104,24 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
             if (btn & AMOTION_EVENT_BUTTON_SECONDARY) flags |= PTR_FLAGS_BUTTON2;
             if (btn & AMOTION_EVENT_BUTTON_TERTIARY)  flags |= PTR_FLAGS_BUTTON3;
             if (flags == PTR_FLAGS_DOWN) flags |= PTR_FLAGS_BUTTON1;
+            prevButtonState_ = btn;
             freerdp_input_send_mouse_event(input, flags, x, y);
             break;
         }
 
         case AMOTION_EVENT_ACTION_UP:
         case AMOTION_EVENT_ACTION_BUTTON_RELEASE: {
-            // Send release for left button by default.
-            freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON1, x, y);
+            // Detect which button(s) were released by comparing with previous state.
+            const int32_t btn = AMotionEvent_getButtonState(event);
+            const int32_t released = prevButtonState_ & ~btn;
+            prevButtonState_ = btn;
+            // Release without PTR_FLAGS_DOWN means button up.
+            if (released & AMOTION_EVENT_BUTTON_SECONDARY)
+                freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON2, x, y);
+            else if (released & AMOTION_EVENT_BUTTON_TERTIARY)
+                freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON3, x, y);
+            else
+                freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON1, x, y);
             break;
         }
 

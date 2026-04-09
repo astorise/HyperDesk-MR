@@ -199,18 +199,22 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     sub.imageArrayIndex   = 0;
     compositionLayer_.subImage = sub;
 
-    // Position: cursor hotspot is at the top-left of the icon.
-    // Offset by half the icon size so the tip of the arrow aligns with the point.
-    compositionLayer_.pose.position    = {
-        cylinderCenter.position.x + wx,
-        cylinderCenter.position.y + wy,
-        cylinderCenter.position.z + wz
-    };
-
     // Orient to face the cylinder center.
     float faceYaw = std::atan2(-wx, -wz);
     float halfYaw = faceYaw * 0.5f;
     compositionLayer_.pose.orientation = {0.0f, std::sin(halfYaw), 0.0f, std::cos(halfYaw)};
+
+    // Hotspot is at the top-left of the arrow icon.  Shift the quad so
+    // the top-left corner (not its center) sits at the cursor 3D position.
+    // The shift is half the quad size: right (+X local) and down (-Y local).
+    float halfSize = kCursorSize * 0.5f;
+    float cosYaw = std::cos(faceYaw);
+    float sinYaw = std::sin(faceYaw);
+    compositionLayer_.pose.position    = {
+        cylinderCenter.position.x + wx + halfSize * cosYaw,
+        cylinderCenter.position.y + wy - halfSize,
+        cylinderCenter.position.z + wz + halfSize * sinYaw
+    };
 
     compositionLayer_.size = {kCursorSize, kCursorSize};
 

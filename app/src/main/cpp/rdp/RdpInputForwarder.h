@@ -66,6 +66,9 @@ private:
     float prevRawX_ = -1.0f;
     float prevRawY_ = -1.0f;
 
+    // Previous button state to detect which button was released.
+    int32_t prevButtonState_ = 0;
+
     // Sensitivity multiplier: Android window is small (~1280x800) but
     // desktop is large (5760x1080). Scale deltas so full mouse sweep
     // covers the entire desktop.
