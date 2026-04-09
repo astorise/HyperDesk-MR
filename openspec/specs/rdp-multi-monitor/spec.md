@@ -48,6 +48,32 @@ The codebase SHALL include a `tests/DisplayManagerTests.cpp` file that uses Goog
 - **WHEN** `DisplayManagerTests` computes the union area of all 16 monitor rectangles
 - **THEN** the total equals exactly 33,177,600 pixels (16 × 1920 × 1080) with no gaps
 
+### Requirement: GFX surfaces are mapped to VR monitors by desktop position
+The application SHALL use the `outputOriginX` field from `MapSurfaceToOutput` and `MapSurfaceToScaledOutput` PDUs to assign each RDP GFX surface to the correct VR monitor. The mapping SHALL be: desktop x=[0,1920) → monitor 2 (right, yaw=-36°), x=[1920,3840) → monitor 0 (center, yaw=0°), x=[3840,5760) → monitor 1 (left, yaw=+36°). Surfaces SHALL NOT be assigned by sequential creation order.
+
+#### Scenario: Surface at x=0 is mapped to the right VR monitor
+- **WHEN** a `MapSurfaceToOutput` PDU is received with `outputOriginX` < 1920
+- **THEN** the surface is assigned to monitor index 2 (right position in VR)
+
+#### Scenario: Surface at x=1920 is mapped to the center VR monitor
+- **WHEN** a `MapSurfaceToOutput` PDU is received with `outputOriginX` in [1920, 3840)
+- **THEN** the surface is assigned to monitor index 0 (center position in VR)
+
+#### Scenario: Surface at x=3840 is mapped to the left VR monitor
+- **WHEN** a `MapSurfaceToOutput` PDU is received with `outputOriginX` >= 3840
+- **THEN** the surface is assigned to monitor index 1 (left position in VR)
+
+### Requirement: Auto-reconnect guards against racing with initial connection
+The auto-reconnect logic SHALL NOT trigger until the RDP session has been successfully connected at least once. A `wasEverConnected` flag SHALL be set to `true` when `IsConnected()` first returns `true`, and reconnection attempts SHALL only occur when `wasEverConnected` is `true` and the connection has dropped.
+
+#### Scenario: No reconnect before first successful connection
+- **WHEN** connection parameters are available but `wasEverConnected` is `false`
+- **THEN** auto-reconnect does not trigger, preventing two concurrent RDP sessions
+
+#### Scenario: Reconnect after connection drops
+- **WHEN** `wasEverConnected` is `true` and `IsConnected()` returns `false`
+- **THEN** auto-reconnect triggers after the cooldown period
+
 ### Requirement: Degraded single-monitor presentation is centered in world space
 When only one monitor is active, monitor 0 SHALL be positioned directly in front of the user instead of inheriting the top-left position of the normal 4x4 wall.
 

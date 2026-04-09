@@ -105,3 +105,29 @@ The `StatusOverlay` SHALL render text to a Vulkan-backed swapchain texture witho
 #### Scenario: Error text is rendered to a texture
 - **WHEN** a status message needs to be displayed
 - **THEN** the message text is rendered to the overlay's swapchain texture and the quad is updated
+
+### Requirement: CursorOverlay renders a mouse cursor icon in 3D space
+A `CursorOverlay` class SHALL manage its own `XrSwapchain` and `XrCompositionLayerQuad` to render a mouse cursor icon on the virtual monitor wall. The cursor texture SHALL be loaded from `assets/cursor.png` via `AImageDecoder`. If PNG loading fails, a procedural fallback arrow cursor SHALL be generated. The cursor texture SHALL be uploaded to all swapchain images during initialization, not lazily during rendering.
+
+#### Scenario: Cursor icon is loaded from APK assets
+- **WHEN** `CursorOverlay` is constructed with a valid `AAssetManager`
+- **THEN** `cursor.png` is loaded via `AImageDecoder` in RGBA_8888 format and the decoded pixels are uploaded to all swapchain images
+
+#### Scenario: Fallback cursor is generated when PNG loading fails
+- **WHEN** `AImageDecoder` fails to load `cursor.png`
+- **THEN** a procedural white arrow cursor with black outline is generated at 24x24 pixels
+
+#### Scenario: Cursor is submitted as a quad layer after monitor layers
+- **WHEN** the render loop calls `xrEndFrame`
+- **THEN** the `CursorOverlay` quad layer is submitted after all monitor cylinder layers, composited on top
+
+### Requirement: CursorOverlay positions the cursor hotspot correctly on the cylinder surface
+The cursor quad SHALL be positioned so that the arrow tip (hotspot pixel) aligns with the 3D point on the cylinder surface corresponding to the current desktop coordinates. The hotspot offset SHALL compensate for the difference between the image center and the arrow tip pixel. The cursor position SHALL be computed by mapping desktop coordinates to monitor index and local UV, then converting to a yaw angle and 3D position on the cylinder surface, pulled slightly toward the viewer to avoid z-fighting.
+
+#### Scenario: Desktop coordinates map to correct 3D position across all monitors
+- **WHEN** the cursor desktop position changes
+- **THEN** the cursor quad moves to the corresponding position on the correct monitor's cylinder surface segment, using the desktop-to-monitor mapping: x=[0,1920) → monitor 2 (right, yaw=-36°), x=[1920,3840) → monitor 0 (center, yaw=0°), x=[3840,5760) → monitor 1 (left, yaw=+36°)
+
+#### Scenario: Hotspot pixel aligns with the cursor point
+- **WHEN** the cursor quad is positioned
+- **THEN** the quad is offset so the arrow tip pixel (not the image center) sits at the target 3D position
