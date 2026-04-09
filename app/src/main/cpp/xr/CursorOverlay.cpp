@@ -11,11 +11,14 @@
 CursorOverlay::CursorOverlay(XrContext& ctx, AAssetManager* assetManager)
     : ctx_(ctx) {
     if (!LoadPngFromAssets(assetManager, "cursor.png")) {
-        LOGE("CursorOverlay: failed to load cursor.png from assets");
-        return;
+        LOGW("CursorOverlay: PNG load failed, using fallback cursor");
+        GenerateFallbackCursor();
     }
     CreateSwapchain();
     CreateStagingBuffer();
+    UploadToAllSwapchainImages();
+    LOGI("CursorOverlay: init complete (%ux%u, %zu images)",
+         texWidth_, texHeight_, swapchainImages_.size());
 }
 
 CursorOverlay::~CursorOverlay() {
@@ -61,15 +64,46 @@ bool CursorOverlay::LoadPngFromAssets(AAssetManager* mgr, const char* path) {
         return false;
     }
 
-    // Store decoded pixels for later upload.  We'll copy to staging buffer
-    // after CreateStagingBuffer is called.
-    // For now, stash in a member — we'll copy in CreateStagingBuffer.
-    // Actually, create staging first then copy.
-    // We'll just hold them temporarily and copy after staging is ready.
-    // Use a simple approach: store the decoded pixels and copy in the upload step.
     decodedPixels_ = std::move(pixels);
     decodedStride_ = stride;
     return true;
+}
+
+void CursorOverlay::GenerateFallbackCursor() {
+    // 24x24 white arrow cursor with alpha.
+    texWidth_  = 24;
+    texHeight_ = 24;
+    decodedStride_ = texWidth_ * 4;
+    decodedPixels_.resize(decodedStride_ * texHeight_, 0);
+
+    // Draw a simple arrow shape (filled white triangle with black outline).
+    // Arrow points top-left, body goes down-right.
+    auto setPixel = [&](int x, int y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+        if (x >= 0 && x < (int)texWidth_ && y >= 0 && y < (int)texHeight_) {
+            size_t off = y * decodedStride_ + x * 4;
+            decodedPixels_[off + 0] = r;
+            decodedPixels_[off + 1] = g;
+            decodedPixels_[off + 2] = b;
+            decodedPixels_[off + 3] = a;
+        }
+    };
+
+    // Classic arrow cursor: triangle widening from top-left.
+    // arrowRows[y] = number of filled pixels on row y.
+    static constexpr int kRows = 20;
+    static constexpr int arrowWidth[kRows] = {
+        1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 5, 4, 3, 2, 1, 0, 0, 0
+    };
+    for (int y = 0; y < kRows; ++y) {
+        int w = arrowWidth[y];
+        for (int x = 0; x < w; ++x) {
+            if (x == 0 || x == w - 1 || y == 0)
+                setPixel(x, y, 0, 0, 0, 255);      // black outline
+            else
+                setPixel(x, y, 255, 255, 255, 255); // white fill
+        }
+    }
+    LOGI("CursorOverlay: generated fallback cursor %ux%u", texWidth_, texHeight_);
 }
 
 void CursorOverlay::SetPosition(int32_t desktopX, int32_t desktopY) {
@@ -151,11 +185,6 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     XrSwapchainImageWaitInfo waitInfo{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
     waitInfo.timeout = XR_INFINITE_DURATION;
     if (XR_FAILED(xrWaitSwapchainImage(swapchain_, &waitInfo))) return nullptr;
-
-    if (!textureUploaded_) {
-        UploadToSwapchainImage(swapchainImages_[imageIndex]);
-        textureUploaded_ = true;
-    }
 
     // Build quad layer.
     compositionLayer_                = XrCompositionLayerQuad{XR_TYPE_COMPOSITION_LAYER_QUAD};
@@ -267,6 +296,26 @@ void CursorOverlay::CreateStagingBuffer() {
         decodedPixels_.clear();
         decodedPixels_.shrink_to_fit();
     }
+}
+
+void CursorOverlay::UploadToAllSwapchainImages() {
+    for (size_t i = 0; i < swapchainImages_.size(); ++i) {
+        uint32_t imageIndex = 0;
+        XrSwapchainImageAcquireInfo acquireInfo{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+        XR_CHECK(xrAcquireSwapchainImage(swapchain_, &acquireInfo, &imageIndex));
+
+        XrSwapchainImageWaitInfo waitInfo{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+        waitInfo.timeout = XR_INFINITE_DURATION;
+        XR_CHECK(xrWaitSwapchainImage(swapchain_, &waitInfo));
+
+        UploadToSwapchainImage(swapchainImages_[imageIndex]);
+
+        XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        XR_CHECK(xrReleaseSwapchainImage(swapchain_, &releaseInfo));
+
+        LOGD("CursorOverlay: uploaded texture to swapchain image %u", imageIndex);
+    }
+    textureUploaded_ = true;
 }
 
 void CursorOverlay::UploadToSwapchainImage(VkImage image) {

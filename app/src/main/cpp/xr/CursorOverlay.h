@@ -53,11 +53,13 @@ private:
     int32_t    desktopY_ = 540;
 
     bool LoadPngFromAssets(AAssetManager* mgr, const char* path);
+    void GenerateFallbackCursor();
     void CreateSwapchain();
     void CreateStagingBuffer();
+    void UploadToAllSwapchainImages();
     void UploadToSwapchainImage(VkImage image);
 
-    // Temporary storage for decoded PNG pixels (cleared after staging upload).
+    // Temporary storage for decoded pixels (cleared after staging upload).
     std::vector<uint8_t> decodedPixels_;
     size_t decodedStride_ = 0;
 };
