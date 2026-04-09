@@ -210,7 +210,7 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     //   localX = +6/24 * kCursorSize  (right of center)
     //   localY = +7/24 * kCursorSize  (above center — image Y is flipped)
     // Move the quad in the opposite direction to compensate.
-    constexpr float kHotspotLocalX = -(6.0f / 24.0f) * kCursorSize;
+    constexpr float kHotspotLocalX = (6.0f / 24.0f) * kCursorSize;
     constexpr float kHotspotLocalY = -(7.0f / 24.0f) * kCursorSize;
     float cosYaw = std::cos(faceYaw);
     float sinYaw = std::sin(faceYaw);
