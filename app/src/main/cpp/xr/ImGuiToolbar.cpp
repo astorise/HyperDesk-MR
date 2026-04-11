@@ -298,6 +298,22 @@ void ImGuiToolbar::CreateCommandObjects() {
 // ── ImGui setup ──────────────────────────────────────────────────────────────
 
 bool ImGuiToolbar::InitImGui() {
+    const VkInstance vkInstance = ctx_.GetVkInstance();
+    const VkPhysicalDevice vkPhysicalDevice = ctx_.GetVkPhysDevice();
+    const VkDevice vkDevice = ctx_.GetVkDevice();
+    const VkQueue vkQueue = ctx_.GetVkQueue();
+    if (vkInstance == VK_NULL_HANDLE ||
+        vkPhysicalDevice == VK_NULL_HANDLE ||
+        vkDevice == VK_NULL_HANDLE ||
+        vkQueue == VK_NULL_HANDLE) {
+        LOGE("ImGuiToolbar: Vulkan not ready for ImGui init (instance=%p phys=%p dev=%p queue=%p)",
+             reinterpret_cast<void*>(vkInstance),
+             reinterpret_cast<void*>(vkPhysicalDevice),
+             reinterpret_cast<void*>(vkDevice),
+             reinterpret_cast<void*>(vkQueue));
+        return false;
+    }
+
     IMGUI_CHECKVERSION();
     imguiCtx_ = ImGui::CreateContext();
     ImGui::SetCurrentContext(imguiCtx_);
@@ -329,11 +345,11 @@ bool ImGuiToolbar::InitImGui() {
     style.Colors[ImGuiCol_ButtonActive]  = ImVec4(0.20f, 0.40f, 0.70f, 1.00f);
 
     ImGui_ImplVulkan_InitInfo initInfo{};
-    initInfo.Instance        = VK_NULL_HANDLE;  // not strictly required
-    initInfo.PhysicalDevice  = ctx_.GetVkPhysDevice();
-    initInfo.Device          = ctx_.GetVkDevice();
+    initInfo.Instance        = vkInstance;
+    initInfo.PhysicalDevice  = vkPhysicalDevice;
+    initInfo.Device          = vkDevice;
     initInfo.QueueFamily     = ctx_.GetVkQueueFamily();
-    initInfo.Queue           = ctx_.GetVkQueue();
+    initInfo.Queue           = vkQueue;
     initInfo.DescriptorPool  = descriptorPool_;
     initInfo.RenderPass      = renderPass_;
     initInfo.MinImageCount   = static_cast<uint32_t>(swapchainImages_.size());

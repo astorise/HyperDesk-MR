@@ -3,7 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HyperDesk MR - Générateur de Connexion</title>
+    <meta name="theme-color" content="#0f172a">
+    <meta name="description" content="Generateur de connexion HyperDesk MR pour Quest 3.">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="apple-touch-icon" href="./icons/icon-192.png">
+    <title>HyperDesk MR - Generateur de Connexion</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <style>
@@ -12,18 +16,49 @@
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen flex items-center justify-center p-4">
-
-    <div class="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl">
-        
+    <div class="max-w-5xl w-full grid grid-cols-1 md:grid-cols-2 gap-8 bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl">
         <div>
-            <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent mb-2">
-                HyperDesk MR
-            </h1>
-            <p class="text-slate-400 mb-8">Configurez votre session RDP multi-écrans pour Quest 3.</p>
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-2">
+                <h1 class="text-3xl font-bold bg-gradient-to-r from-blue-400 to-emerald-400 bg-clip-text text-transparent">
+                    HyperDesk MR
+                </h1>
+                <button id="install-app" type="button" hidden
+                    class="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-4 py-2 rounded-lg transition-colors">
+                    Installer l'app
+                </button>
+            </div>
+            <p class="text-slate-400 mb-8">Configurez votre session RDP multi-ecrans pour Quest 3.</p>
 
             <form id="rdp-form" class="space-y-4">
+                <div class="p-4 bg-slate-950/60 border border-slate-800 rounded-xl">
+                    <label for="profile-name" class="block text-sm font-medium text-slate-200 mb-1">Nom du profil (local)</label>
+                    <div class="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
+                        <input id="profile-name" type="text" maxlength="48" placeholder="Bureau principal"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
+                        <select id="profile-select"
+                            class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="">Profils sauvegardes...</option>
+                        </select>
+                        <button type="button" id="load-profile"
+                            class="bg-slate-700 hover:bg-slate-600 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            Charger
+                        </button>
+                    </div>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                        <button type="button" id="save-profile"
+                            class="bg-blue-600 hover:bg-blue-500 text-white font-medium px-4 py-2 rounded-lg transition-colors">
+                            Sauvegarder
+                        </button>
+                        <button type="button" id="delete-profile"
+                            class="bg-rose-700 hover:bg-rose-600 text-white font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                            Supprimer
+                        </button>
+                    </div>
+                    <p class="mt-2 text-xs text-slate-500">Les profils sont stockes dans le localStorage de ce navigateur (mot de passe inclus).</p>
+                </div>
+
                 <div>
-                    <label class="block text-sm font-medium text-slate-300 mb-1">Hôte (IP ou Nom)</label>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Hote (IP ou Nom)</label>
                     <input type="text" name="h" placeholder="192.168.1.100" required
                         class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none transition-all">
                 </div>
@@ -43,83 +78,335 @@
 
                 <div>
                     <label class="block text-sm font-medium text-slate-300 mb-1">Mot de passe</label>
-                    <input type="password" name="p" placeholder="••••••••" required
+                    <input type="password" name="p" placeholder="********" required
                         class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
 
                 <div>
-                    <label class="block text-sm font-medium text-slate-300 mb-1">Domaine (Optionnel)</label>
+                    <label class="block text-sm font-medium text-slate-300 mb-1">Domaine (optionnel)</label>
                     <input type="text" name="d" placeholder="WORKGROUP"
                         class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2 focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
 
-                <button type="submit" 
+                <button type="submit"
                     class="w-full bg-blue-600 hover:bg-blue-500 text-white font-semibold py-3 rounded-lg transition-colors shadow-lg shadow-blue-900/20">
-                    Générer le QR Code
+                    Generer le QR Code
                 </button>
             </form>
+
+            <p id="status-message" class="mt-4 text-sm text-slate-400" role="status" aria-live="polite"></p>
         </div>
 
         <div class="flex flex-col items-center justify-center border-t md:border-t-0 md:border-l border-slate-800 pt-8 md:pt-0 md:pl-8">
-            <div id="qrcode-container" class="bg-white p-4 rounded-xl shadow-inner mb-6 transition-transform hover:scale-105">
-                </div>
-            
+            <div id="qrcode-container" class="bg-white p-4 rounded-xl shadow-inner mb-6 transition-transform hover:scale-105"></div>
+
             <div class="text-center">
                 <h2 class="text-lg font-semibold mb-2">Comment scanner ?</h2>
                 <ol class="text-sm text-slate-400 space-y-2 text-left list-decimal list-inside">
                     <li>Mettez votre casque Quest 3</li>
                     <li>Lancez l'application HyperDesk MR</li>
-                    <li>Visez ce code avec les caméras</li>
-                    <li>La connexion démarrera automatiquement</li>
+                    <li>Visez ce code avec les cameras</li>
+                    <li>La connexion demarrera automatiquement</li>
                 </ol>
             </div>
         </div>
     </div>
 
     <script>
+        const STORAGE_PROFILES_KEY = 'hyperdesk:profiles:v1';
+        const STORAGE_LAST_PROFILE_KEY = 'hyperdesk:last-profile:v1';
+        const STATUS_COLORS = {
+            info: 'text-slate-400',
+            success: 'text-emerald-400',
+            error: 'text-rose-400'
+        };
+
         const form = document.getElementById('rdp-form');
         const qrContainer = document.getElementById('qrcode-container');
-        let qrcode = null;
+        const profileNameInput = document.getElementById('profile-name');
+        const profileSelect = document.getElementById('profile-select');
+        const saveProfileButton = document.getElementById('save-profile');
+        const loadProfileButton = document.getElementById('load-profile');
+        const deleteProfileButton = document.getElementById('delete-profile');
+        const statusMessage = document.getElementById('status-message');
+        const installAppButton = document.getElementById('install-app');
 
-        form.addEventListener('submit', (e) => {
-            e.preventDefault();
-            
+        let deferredInstallPrompt = null;
+
+        function setStatus(message, type = 'info') {
+            statusMessage.textContent = message;
+            statusMessage.classList.remove(...Object.values(STATUS_COLORS));
+            statusMessage.classList.add(STATUS_COLORS[type] || STATUS_COLORS.info);
+        }
+
+        function sanitizePort(value) {
+            const parsed = Number.parseInt(value, 10);
+            return Number.isFinite(parsed) && parsed > 0 ? parsed : 3389;
+        }
+
+        function getConfigFromForm() {
             const formData = new FormData(form);
-            const data = {
-                h: formData.get('h'),
-                u: formData.get('u'),
-                p: formData.get('p'),
-                port: parseInt(formData.get('port')) || 3389
+            const config = {
+                h: String(formData.get('h') || '').trim(),
+                u: String(formData.get('u') || '').trim(),
+                p: String(formData.get('p') || ''),
+                port: sanitizePort(formData.get('port'))
             };
 
-            if (formData.get('d')) data.d = formData.get('d');
+            const domain = String(formData.get('d') || '').trim();
+            if (domain) {
+                config.d = domain;
+            }
 
-            // Conversion en JSON compact pour minimiser la taille du QR
-            const jsonString = JSON.stringify(data);
+            return config;
+        }
 
-            // Nettoyage et génération
-            qrContainer.innerHTML = "";
-            qrcode = new QRCode(qrContainer, {
-                text: jsonString,
-                width: 256,
-                height: 256,
-                colorDark : "#0f172a",
-                colorLight : "#ffffff",
-                correctLevel : QRCode.CorrectLevel.H
+        function applyConfigToForm(config) {
+            form.elements.h.value = config.h || '';
+            form.elements.u.value = config.u || '';
+            form.elements.p.value = config.p || '';
+            form.elements.port.value = sanitizePort(config.port);
+            form.elements.d.value = config.d || '';
+        }
+
+        function readProfiles() {
+            try {
+                const raw = localStorage.getItem(STORAGE_PROFILES_KEY);
+                if (!raw) {
+                    return {};
+                }
+
+                const parsed = JSON.parse(raw);
+                return typeof parsed === 'object' && parsed !== null ? parsed : {};
+            } catch (error) {
+                console.error('Impossible de lire les profils depuis le localStorage:', error);
+                setStatus('Impossible de lire les profils en local.', 'error');
+                return {};
+            }
+        }
+
+        function writeProfiles(profiles) {
+            try {
+                localStorage.setItem(STORAGE_PROFILES_KEY, JSON.stringify(profiles));
+                return true;
+            } catch (error) {
+                console.error('Impossible de sauvegarder les profils en local:', error);
+                setStatus('Impossible de sauvegarder les profils en local.', 'error');
+                return false;
+            }
+        }
+
+        function getProfileNames(profiles) {
+            return Object.keys(profiles).sort((a, b) => a.localeCompare(b, 'fr'));
+        }
+
+        function renderProfileOptions(selectedName = '') {
+            const profiles = readProfiles();
+            const profileNames = getProfileNames(profiles);
+            const currentSelection = profileNames.includes(selectedName) ? selectedName : '';
+
+            profileSelect.innerHTML = '<option value="">Profils sauvegardes...</option>';
+            profileNames.forEach((name) => {
+                const option = document.createElement('option');
+                option.value = name;
+                option.textContent = name;
+                profileSelect.appendChild(option);
             });
-        });
 
-        // Génération initiale par défaut
-        window.onload = () => {
-            const initialData = '{"h":"192.168.1.100","u":"user","p":"password","port":3389}';
+            if (currentSelection) {
+                profileSelect.value = currentSelection;
+            }
+
+            const hasProfiles = profileNames.length > 0;
+            loadProfileButton.disabled = !hasProfiles;
+            deleteProfileButton.disabled = !hasProfiles;
+        }
+
+        function buildQrCode(config) {
+            qrContainer.innerHTML = '';
             new QRCode(qrContainer, {
-                text: initialData,
+                text: JSON.stringify(config),
                 width: 256,
                 height: 256,
-                colorDark : "#0f172a",
-                colorLight : "#ffffff"
+                colorDark: '#0f172a',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.H
             });
-        };
+        }
+
+        function loadProfile(profileName) {
+            const profiles = readProfiles();
+            const profile = profiles[profileName];
+
+            if (!profile) {
+                setStatus('Profil introuvable.', 'error');
+                return;
+            }
+
+            applyConfigToForm(profile);
+            profileNameInput.value = profileName;
+            profileSelect.value = profileName;
+            try {
+                localStorage.setItem(STORAGE_LAST_PROFILE_KEY, profileName);
+            } catch (error) {
+                console.error('Impossible de memoriser le dernier profil:', error);
+            }
+            buildQrCode(profile);
+            setStatus(`Profil "${profileName}" charge.`, 'success');
+        }
+
+        function saveCurrentProfile() {
+            const profileName = profileNameInput.value.trim();
+            if (!profileName) {
+                setStatus('Saisissez un nom de profil avant la sauvegarde.', 'error');
+                profileNameInput.focus();
+                return;
+            }
+
+            const profiles = readProfiles();
+            profiles[profileName] = getConfigFromForm();
+            if (!writeProfiles(profiles)) {
+                return;
+            }
+
+            try {
+                localStorage.setItem(STORAGE_LAST_PROFILE_KEY, profileName);
+            } catch (error) {
+                console.error('Impossible de memoriser le dernier profil:', error);
+            }
+            renderProfileOptions(profileName);
+            profileSelect.value = profileName;
+            setStatus(`Profil "${profileName}" sauvegarde.`, 'success');
+        }
+
+        function deleteCurrentProfile() {
+            const profileName = (profileSelect.value || profileNameInput.value).trim();
+            if (!profileName) {
+                setStatus('Selectionnez un profil a supprimer.', 'error');
+                return;
+            }
+
+            const profiles = readProfiles();
+            if (!profiles[profileName]) {
+                setStatus('Ce profil n existe pas.', 'error');
+                return;
+            }
+
+            delete profiles[profileName];
+            if (!writeProfiles(profiles)) {
+                return;
+            }
+
+            const lastProfile = localStorage.getItem(STORAGE_LAST_PROFILE_KEY);
+            if (lastProfile === profileName) {
+                try {
+                    localStorage.removeItem(STORAGE_LAST_PROFILE_KEY);
+                } catch (error) {
+                    console.error('Impossible d effacer le dernier profil:', error);
+                }
+            }
+
+            profileNameInput.value = '';
+            renderProfileOptions();
+            setStatus(`Profil "${profileName}" supprime.`, 'success');
+        }
+
+        function setupInstallPrompt() {
+            window.addEventListener('beforeinstallprompt', (event) => {
+                event.preventDefault();
+                deferredInstallPrompt = event;
+                installAppButton.hidden = false;
+            });
+
+            installAppButton.addEventListener('click', async () => {
+                if (!deferredInstallPrompt) {
+                    return;
+                }
+
+                deferredInstallPrompt.prompt();
+                const { outcome } = await deferredInstallPrompt.userChoice;
+                deferredInstallPrompt = null;
+                installAppButton.hidden = true;
+
+                if (outcome === 'accepted') {
+                    setStatus('Application installee sur cet appareil.', 'success');
+                } else {
+                    setStatus('Installation annulee.', 'info');
+                }
+            });
+
+            window.addEventListener('appinstalled', () => {
+                deferredInstallPrompt = null;
+                installAppButton.hidden = true;
+                setStatus('Application installee sur cet appareil.', 'success');
+            });
+        }
+
+        function registerServiceWorker() {
+            if (!('serviceWorker' in navigator)) {
+                return;
+            }
+
+            window.addEventListener('load', async () => {
+                try {
+                    await navigator.serviceWorker.register('./service-worker.js');
+                } catch (error) {
+                    console.error('Echec enregistrement Service Worker:', error);
+                    setStatus('Impossible d activer le mode hors ligne.', 'error');
+                }
+            });
+        }
+
+        function initialize() {
+            setupInstallPrompt();
+            registerServiceWorker();
+
+            saveProfileButton.addEventListener('click', saveCurrentProfile);
+            loadProfileButton.addEventListener('click', () => {
+                const selectedName = (profileSelect.value || profileNameInput.value).trim();
+                if (!selectedName) {
+                    setStatus('Selectionnez un profil a charger.', 'error');
+                    return;
+                }
+
+                loadProfile(selectedName);
+            });
+            deleteProfileButton.addEventListener('click', deleteCurrentProfile);
+
+            profileSelect.addEventListener('change', () => {
+                if (profileSelect.value) {
+                    profileNameInput.value = profileSelect.value;
+                }
+            });
+
+            form.addEventListener('submit', (event) => {
+                event.preventDefault();
+                const config = getConfigFromForm();
+                buildQrCode(config);
+                setStatus('QR code genere.', 'success');
+            });
+
+            const profiles = readProfiles();
+            const lastProfile = localStorage.getItem(STORAGE_LAST_PROFILE_KEY) || '';
+            renderProfileOptions(lastProfile);
+
+            if (lastProfile && profiles[lastProfile]) {
+                loadProfile(lastProfile);
+                return;
+            }
+
+            const initialData = {
+                h: '192.168.1.100',
+                u: 'user',
+                p: 'password',
+                port: 3389
+            };
+
+            applyConfigToForm(initialData);
+            buildQrCode(initialData);
+        }
+
+        initialize();
     </script>
 </body>
 </html>

@@ -50,6 +50,7 @@ public:
     XrSession    GetSession()        const { return session_; }
     XrSpace      GetWorldSpace()     const { return worldSpace_; }
     XrSystemId   GetSystemId()       const { return systemId_; }
+    VkInstance   GetVkInstance()     const { return vkInstance_; }
     VkDevice     GetVkDevice()       const { return vkDevice_; }
     VkPhysicalDevice GetVkPhysDevice() const { return vkPhysDevice_; }
     uint32_t     GetVkQueueFamily()  const { return vkQueueFamily_; }
