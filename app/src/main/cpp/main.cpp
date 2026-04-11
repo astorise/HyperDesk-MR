@@ -81,6 +81,7 @@ struct AppState {
     bool                                   hasConnParams = false;
     bool                                   wasEverConnected = false;
     uint64_t                               reconnectCooldownFrame = 0;
+    uint64_t                               qrRetryFrame = 0;
 };
 
 // ── Android lifecycle callback ────────────────────────────────────────────────
@@ -122,6 +123,7 @@ void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
     static constexpr uint32_t kQrAnchorFrames = 30;
     static constexpr uint32_t kLayoutRefreshAnchorFrames = 8;
+    static constexpr uint32_t kQrRestartCooldownFrames = 120;  // ~1.6s @72Hz
 
     // Register the JavaVM with WinPR so winpr_jni_attach_thread (used by
     // Unicode conversion, timezone, etc.) can attach to the JVM.
@@ -322,6 +324,8 @@ void android_main(android_app* app) {
     } else {
         LOGE("QR scanner failed to start — check CAMERA permission");
         state.statusOverlay->AddLog("[ERR] Camera failed to start");
+        state.statusOverlay->AddLog("[WARN] Waiting for camera permission...");
+        state.qrRetryFrame = kQrRestartCooldownFrames;
     }
 
     // ── Main loop ─────────────────────────────────────────────────────────────
@@ -424,6 +428,18 @@ void android_main(android_app* app) {
         // ── Track connection state for auto-reconnect ──────────────────────
         if (state.rdpManager->IsConnected()) {
             state.wasEverConnected = true;
+        }
+        if (state.qrScanner && !state.hasConnParams && !state.qrScanner->IsRunning()
+            && frameCount >= state.qrRetryFrame) {
+            if (state.qrScanner->Start()) {
+                LOGI("QR scanner started after retry");
+                state.statusOverlay->AddLog("[OK] Camera started");
+                state.statusOverlay->AddLog("Point headset at QR code...");
+            } else {
+                LOGW("QR scanner retry failed");
+                state.statusOverlay->AddLog("[WARN] Camera unavailable; retrying...");
+            }
+            state.qrRetryFrame = frameCount + kQrRestartCooldownFrames;
         }
 
         // ── Auto-reconnect when RDP session drops ─────────────────────────

@@ -8,6 +8,7 @@
 #include <media/NdkImageReader.h>
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <mutex>
@@ -38,6 +39,7 @@ public:
     uint8_t GetSelectedCameraPosition() const { return selectedCameraPosition_.load(); }
 
 private:
+    ANativeActivity*   activity_ = nullptr;
     ACameraManager*    cameraMgr_ = nullptr;
     ACameraDevice*     cameraDevice_ = nullptr;
     AImageReader*      imageReader_ = nullptr;
@@ -49,9 +51,14 @@ private:
 
     std::atomic<bool>  running_{false};
     std::atomic<uint8_t> selectedCameraPosition_{255};
+    std::chrono::steady_clock::time_point lastPermissionRequest_;
     FrameCallback      frameCallback_;
     std::mutex         callbackMutex_;
 
+    bool EnsureCameraPermissions();
+    bool HasPermission(const char* permission);
+    void RequestCameraPermissions();
+    void ReleaseResources();
     std::string FindCameraId();
     bool CreateImageReader();
     bool OpenCamera(const std::string& cameraId);

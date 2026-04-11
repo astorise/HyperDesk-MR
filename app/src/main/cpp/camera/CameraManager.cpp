@@ -2,20 +2,75 @@
 #include "../xr/StatusOverlay.h"
 #include "../util/Logger.h"
 
+#include <camera/NdkCameraError.h>
 #include <camera/NdkCameraMetadata.h>
 #include <media/NdkImage.h>
 
+#include <chrono>
 #include <cstdio>
 
 static constexpr int32_t kImageWidth  = 640;
 static constexpr int32_t kImageHeight = 480;
 static constexpr int32_t kMaxImages   = 2;
+static constexpr int32_t kPermissionRequestCode = 4242;
 
 // Meta passthrough camera vendor tags.
 static constexpr uint32_t kMetaCameraSourceTag   = 0x80004d00;
 static constexpr uint32_t kMetaCameraPositionTag = 0x80004d01;
 
-CameraManager::CameraManager(ANativeActivity* /*activity*/) {}
+namespace {
+
+struct ScopedJniEnv {
+    JavaVM* vm = nullptr;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+
+    explicit ScopedJniEnv(JavaVM* javaVm) : vm(javaVm) {
+        if (!vm) return;
+        if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) {
+            return;
+        }
+        if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+            attached = true;
+        } else {
+            env = nullptr;
+        }
+    }
+
+    ~ScopedJniEnv() {
+        if (vm && attached) {
+            vm->DetachCurrentThread();
+        }
+    }
+};
+
+const char* CameraStatusToString(camera_status_t status) {
+    switch (status) {
+        case ACAMERA_OK: return "OK";
+        case ACAMERA_ERROR_INVALID_PARAMETER: return "INVALID_PARAMETER";
+        case ACAMERA_ERROR_CAMERA_DISCONNECTED: return "CAMERA_DISCONNECTED";
+        case ACAMERA_ERROR_NOT_ENOUGH_MEMORY: return "NOT_ENOUGH_MEMORY";
+        case ACAMERA_ERROR_METADATA_NOT_FOUND: return "METADATA_NOT_FOUND";
+        case ACAMERA_ERROR_CAMERA_DEVICE: return "CAMERA_DEVICE";
+        case ACAMERA_ERROR_CAMERA_SERVICE: return "CAMERA_SERVICE";
+        case ACAMERA_ERROR_SESSION_CLOSED: return "SESSION_CLOSED";
+        case ACAMERA_ERROR_INVALID_OPERATION: return "INVALID_OPERATION";
+        case ACAMERA_ERROR_STREAM_CONFIGURE_FAIL: return "STREAM_CONFIGURE_FAIL";
+        case ACAMERA_ERROR_CAMERA_IN_USE: return "CAMERA_IN_USE";
+        case ACAMERA_ERROR_MAX_CAMERA_IN_USE: return "MAX_CAMERA_IN_USE";
+        case ACAMERA_ERROR_CAMERA_DISABLED: return "CAMERA_DISABLED";
+        case ACAMERA_ERROR_PERMISSION_DENIED: return "PERMISSION_DENIED";
+        case ACAMERA_ERROR_UNSUPPORTED_OPERATION: return "UNSUPPORTED_OPERATION";
+        case ACAMERA_ERROR_UNKNOWN:
+        default:
+            return "UNKNOWN";
+    }
+}
+
+}  // namespace
+
+CameraManager::CameraManager(ANativeActivity* activity)
+    : activity_(activity) {}
 
 CameraManager::~CameraManager() {
     Stop();
@@ -30,6 +85,10 @@ bool CameraManager::Start() {
     if (running_.load()) return true;
     selectedCameraPosition_.store(255);
 
+    if (!EnsureCameraPermissions()) {
+        return false;
+    }
+
     cameraMgr_ = ACameraManager_create();
     if (!cameraMgr_) {
         LOGE("CameraManager: failed to create ACameraManager");
@@ -37,6 +96,7 @@ bool CameraManager::Start() {
             StatusOverlay::sInstance->SetStatusLine(1, "cam: manager create failed");
             StatusOverlay::sInstance->AddLog("[ERR] Camera manager create failed");
         }
+        ReleaseResources();
         return false;
     }
 
@@ -47,12 +107,22 @@ bool CameraManager::Start() {
             StatusOverlay::sInstance->SetStatusLine(1, "cam: no camera found");
             StatusOverlay::sInstance->AddLog("[ERR] No camera found");
         }
+        ReleaseResources();
         return false;
     }
 
-    if (!CreateImageReader()) return false;
-    if (!OpenCamera(cameraId)) return false;
-    if (!CreateCaptureSession()) return false;
+    if (!CreateImageReader()) {
+        ReleaseResources();
+        return false;
+    }
+    if (!OpenCamera(cameraId)) {
+        ReleaseResources();
+        return false;
+    }
+    if (!CreateCaptureSession()) {
+        ReleaseResources();
+        return false;
+    }
 
     running_.store(true);
     LOGI("CameraManager: started");
@@ -63,9 +133,15 @@ bool CameraManager::Start() {
 }
 
 void CameraManager::Stop() {
-    if (!running_.load()) return;
     running_.store(false);
+    ReleaseResources();
+    LOGI("CameraManager: stopped");
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: stopped");
+    }
+}
 
+void CameraManager::ReleaseResources() {
     if (captureSession_) {
         ACameraCaptureSession_close(captureSession_);
         captureSession_ = nullptr;
@@ -98,10 +174,139 @@ void CameraManager::Stop() {
         ACameraManager_delete(cameraMgr_);
         cameraMgr_ = nullptr;
     }
-    LOGI("CameraManager: stopped");
-    if (StatusOverlay::sInstance) {
-        StatusOverlay::sInstance->SetStatusLine(2, "cam: stopped");
+}
+
+bool CameraManager::HasPermission(const char* permission) {
+    if (!activity_ || !activity_->vm || !activity_->clazz || !permission) {
+        return false;
     }
+
+    ScopedJniEnv jni(activity_->vm);
+    if (!jni.env) {
+        LOGE("CameraManager: failed to access JNI environment");
+        return false;
+    }
+
+    JNIEnv* env = jni.env;
+    jclass activityClass = env->GetObjectClass(activity_->clazz);
+    if (!activityClass) {
+        return false;
+    }
+
+    jmethodID checkSelfPermission = env->GetMethodID(
+        activityClass, "checkSelfPermission", "(Ljava/lang/String;)I");
+    if (!checkSelfPermission) {
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+
+    jstring permissionString = env->NewStringUTF(permission);
+    if (!permissionString) {
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+    const jint result = env->CallIntMethod(
+        activity_->clazz, checkSelfPermission, permissionString);
+
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        env->DeleteLocalRef(permissionString);
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+
+    env->DeleteLocalRef(permissionString);
+    env->DeleteLocalRef(activityClass);
+    return result == 0;  // PackageManager.PERMISSION_GRANTED
+}
+
+void CameraManager::RequestCameraPermissions() {
+    if (!activity_ || !activity_->vm || !activity_->clazz) {
+        return;
+    }
+
+    ScopedJniEnv jni(activity_->vm);
+    if (!jni.env) {
+        return;
+    }
+
+    JNIEnv* env = jni.env;
+    jclass activityClass = env->GetObjectClass(activity_->clazz);
+    if (!activityClass) {
+        return;
+    }
+
+    jmethodID requestPermissions = env->GetMethodID(
+        activityClass, "requestPermissions", "([Ljava/lang/String;I)V");
+    if (!requestPermissions) {
+        env->DeleteLocalRef(activityClass);
+        return;
+    }
+
+    jclass stringClass = env->FindClass("java/lang/String");
+    if (!stringClass) {
+        env->DeleteLocalRef(activityClass);
+        return;
+    }
+    jobjectArray permissions = env->NewObjectArray(2, stringClass, nullptr);
+    if (!permissions) {
+        env->DeleteLocalRef(stringClass);
+        env->DeleteLocalRef(activityClass);
+        return;
+    }
+
+    jstring cameraPermission = env->NewStringUTF("android.permission.CAMERA");
+    jstring headsetCameraPermission = env->NewStringUTF("horizonos.permission.HEADSET_CAMERA");
+    if (!cameraPermission || !headsetCameraPermission) {
+        if (headsetCameraPermission) env->DeleteLocalRef(headsetCameraPermission);
+        if (cameraPermission) env->DeleteLocalRef(cameraPermission);
+        env->DeleteLocalRef(permissions);
+        env->DeleteLocalRef(stringClass);
+        env->DeleteLocalRef(activityClass);
+        return;
+    }
+    env->SetObjectArrayElement(permissions, 0, cameraPermission);
+    env->SetObjectArrayElement(permissions, 1, headsetCameraPermission);
+
+    env->CallVoidMethod(activity_->clazz, requestPermissions, permissions, kPermissionRequestCode);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    } else {
+        LOGI("CameraManager: requested CAMERA + HEADSET_CAMERA permissions");
+    }
+
+    env->DeleteLocalRef(headsetCameraPermission);
+    env->DeleteLocalRef(cameraPermission);
+    env->DeleteLocalRef(permissions);
+    env->DeleteLocalRef(stringClass);
+    env->DeleteLocalRef(activityClass);
+}
+
+bool CameraManager::EnsureCameraPermissions() {
+    const bool hasCamera = HasPermission("android.permission.CAMERA");
+    const bool hasHeadsetCamera = HasPermission("horizonos.permission.HEADSET_CAMERA");
+    if (hasCamera && hasHeadsetCamera) {
+        return true;
+    }
+
+    const auto now = std::chrono::steady_clock::now();
+    constexpr auto kPermissionRequestCooldown = std::chrono::seconds(5);
+    if (lastPermissionRequest_.time_since_epoch().count() == 0 ||
+        now - lastPermissionRequest_ >= kPermissionRequestCooldown) {
+        RequestCameraPermissions();
+        lastPermissionRequest_ = now;
+    }
+
+    LOGW("CameraManager: missing camera permissions (CAMERA=%d HEADSET_CAMERA=%d)",
+         hasCamera ? 1 : 0,
+         hasHeadsetCamera ? 1 : 0);
+    if (StatusOverlay::sInstance) {
+        StatusOverlay::sInstance->SetStatusLine(2, "cam: permission required");
+        StatusOverlay::sInstance->AddLog("[WARN] Grant camera permission in headset");
+    }
+    return false;
 }
 
 std::string CameraManager::FindCameraId() {
@@ -243,12 +448,16 @@ bool CameraManager::OpenCamera(const std::string& cameraId) {
     camera_status_t status = ACameraManager_openCamera(cameraMgr_, cameraId.c_str(),
                                                         &deviceCb, &cameraDevice_);
     if (status != ACAMERA_OK || !cameraDevice_) {
-        LOGE("CameraManager: openCamera failed: %d", status);
+        LOGE("CameraManager: openCamera failed: %d (%s)", status, CameraStatusToString(status));
         if (StatusOverlay::sInstance) {
-            char buf[96];
-            snprintf(buf, sizeof(buf), "cam: open failed (%d) id=%s", status, cameraId.c_str());
+            char buf[128];
+            snprintf(buf, sizeof(buf), "cam: open failed %s (%d)", CameraStatusToString(status), status);
             StatusOverlay::sInstance->SetStatusLine(2, buf);
-            StatusOverlay::sInstance->AddLog("[ERR] Camera open failed");
+            if (status == ACAMERA_ERROR_PERMISSION_DENIED) {
+                StatusOverlay::sInstance->AddLog("[ERR] Camera permission denied");
+            } else {
+                StatusOverlay::sInstance->AddLog("[ERR] Camera open failed");
+            }
         }
         return false;
     }
