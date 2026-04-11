@@ -4,6 +4,7 @@
 #include "XrPassthrough.h"
 #include "StatusOverlay.h"
 #include "CursorOverlay.h"
+#include "ImGuiToolbar.h"
 #include "../codec/MediaCodecDecoder.h"
 #include "../rdp/RdpInputForwarder.h"
 #include "../scene/FrustumCuller.h"
@@ -77,6 +78,30 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
 
         layerPtrs_[layerCount++] =
             reinterpret_cast<const XrCompositionLayerBaseHeader*>(layer);
+    }
+
+    // ImGui toolbar — render after monitors, before cursor.
+    if (imguiToolbar_ && imguiToolbar_->IsReady()) {
+        const MonitorDescriptor& mon0 = layout_.GetMonitor(0);
+        if (mon0.active) {
+            // Forward cursor input to ImGui (if forwarder is available).
+            if (inputForwarder_) {
+                float u = 0.0f, v = 0.0f;
+                const bool inside = inputForwarder_->GetToolbarCursor(u, v);
+                imguiToolbar_->SetMouseInput(u, v, inside,
+                                             inputForwarder_->IsLeftButtonDown());
+            }
+
+            constexpr float kCylinderRadius = 1.6f;
+            constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;
+            constexpr float kAspectRatio = 16.0f / 9.0f;
+            if (auto* tbLayer = imguiToolbar_->GetCompositionLayer(
+                    ctx_.GetWorldSpace(), mon0.worldPose,
+                    kCylinderRadius, kDecagonStep, kAspectRatio)) {
+                layerPtrs_[layerCount++] =
+                    reinterpret_cast<const XrCompositionLayerBaseHeader*>(tbLayer);
+            }
+        }
     }
 
     // Cursor overlay — render after monitors so it appears on top.

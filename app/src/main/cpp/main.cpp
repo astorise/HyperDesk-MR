@@ -7,6 +7,7 @@
 #include "xr/XrCompositor.h"
 #include "xr/StatusOverlay.h"
 #include "xr/CursorOverlay.h"
+#include "xr/ImGuiToolbar.h"
 #include "rdp/RdpConnectionManager.h"
 #include "rdp/RdpDisplayControl.h"
 #include "rdp/RdpInputForwarder.h"
@@ -49,6 +50,7 @@ struct AppState {
     std::unique_ptr<XrCompositor>         compositor;
     std::unique_ptr<StatusOverlay>        statusOverlay;
     std::unique_ptr<CursorOverlay>        cursorOverlay;
+    std::unique_ptr<ImGuiToolbar>         imguiToolbar;
     std::unique_ptr<QrScanner>            qrScanner;
 
     std::mutex                            latestHeadPoseMutex;
@@ -204,6 +206,11 @@ void android_main(android_app* app) {
     state.cursorOverlay = std::make_unique<CursorOverlay>(
         *state.xrContext, app->activity->assetManager);
     state.compositor->SetCursorOverlay(state.cursorOverlay.get(), state.inputForwarder.get());
+
+    // Dear ImGui toolbar (action buttons under the central monitor).
+    state.imguiToolbar = std::make_unique<ImGuiToolbar>(
+        *state.xrContext, app->activity->assetManager);
+    state.compositor->SetImGuiToolbar(state.imguiToolbar.get());
 
     // RDP error callback — show error text in the status overlay.
     state.rdpManager->SetErrorCallback([&state](uint32_t errorCode) {

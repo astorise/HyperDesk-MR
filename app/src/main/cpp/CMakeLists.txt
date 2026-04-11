@@ -29,6 +29,31 @@ set(BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
 set(BUILD_PYTHON_MODULE OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(zxing-cpp)
 
+# ── Dear ImGui (UI toolkit) ───────────────────────────────────────────────────
+FetchContent_Declare(
+    imgui
+    GIT_REPOSITORY https://github.com/ocornut/imgui.git
+    GIT_TAG        v1.91.5
+    GIT_SHALLOW    TRUE
+)
+FetchContent_MakeAvailable(imgui)
+add_library(imgui STATIC
+    ${imgui_SOURCE_DIR}/imgui.cpp
+    ${imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${imgui_SOURCE_DIR}/imgui_tables.cpp
+    ${imgui_SOURCE_DIR}/backends/imgui_impl_vulkan.cpp
+)
+target_include_directories(imgui PUBLIC
+    ${imgui_SOURCE_DIR}
+    ${imgui_SOURCE_DIR}/backends
+)
+target_compile_definitions(imgui PUBLIC
+    IMGUI_IMPL_VULKAN_NO_PROTOTYPES=0
+    VK_NO_PROTOTYPES=0
+)
+target_link_libraries(imgui PUBLIC ${vulkan-lib})
+
 # ── Paths to third-party dependencies ─────────────────────────────────────────
 # Resolve relative to the repo root (4 levels up from app/src/main/cpp/)
 get_filename_component(REPO_ROOT
@@ -103,6 +128,7 @@ add_library(hyperdesk_mr SHARED
     xr/XrCompositor.cpp
     xr/StatusOverlay.cpp
     xr/CursorOverlay.cpp
+    xr/ImGuiToolbar.cpp
     rdp/RdpConnectionManager.cpp
     rdp/RdpDisplayControl.cpp
     rdp/RdpInputForwarder.cpp
@@ -150,6 +176,7 @@ target_link_libraries(hyperdesk_mr
         ssl_3
         crypto_3
         ZXing::ZXing
+        imgui
         ${log-lib}
         ${android-lib}
         ${mediandk-lib}

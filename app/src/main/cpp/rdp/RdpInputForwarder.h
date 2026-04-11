@@ -23,6 +23,20 @@ public:
         cursorY_ = 540;
     }
 
+    // Toolbar band: a virtual region below the desktop where mouse events are
+    // routed to the ImGui toolbar instead of RDP.  Vertical extent is in
+    // virtual cursor pixels (same units as desktopH_).
+    static constexpr int32_t kToolbarBandHeight = 220;
+    static constexpr int32_t kToolbarBandX0     = 1920;
+    static constexpr int32_t kToolbarBandX1     = 3840;
+
+    // Returns true if the cursor is currently inside the toolbar band, and
+    // sets u/v to its normalized position within the band.
+    bool GetToolbarCursor(float& u, float& v) const;
+
+    // Returns the latched left-button state for ImGui injection.
+    bool IsLeftButtonDown() const { return leftDown_.load(); }
+
     // Returns true if the event was consumed.
     bool OnInputEvent(AInputEvent* event);
 
@@ -58,9 +72,14 @@ private:
     uint32_t desktopH_ = 1080;
 
     // Internal absolute cursor position (updated by relative deltas).
-    std::mutex cursorMutex_;
+    // Y is allowed to extend up to desktopH_ + kToolbarBandHeight - 1 so the
+    // cursor can enter the toolbar band below the central monitor.
+    mutable std::mutex cursorMutex_;
     int32_t cursorX_ = 2880;  // center of 5760
     int32_t cursorY_ = 540;
+
+    // Latched left-button state for ImGui injection.
+    std::atomic<bool> leftDown_{false};
 
     // Previous Android mouse position for delta computation.
     float prevRawX_ = -1.0f;

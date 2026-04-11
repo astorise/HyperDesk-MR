@@ -14,6 +14,22 @@ rdpInput* RdpInputForwarder::GetInput() const {
     return inst->context->input;
 }
 
+bool RdpInputForwarder::GetToolbarCursor(float& u, float& v) const {
+    int32_t x, y;
+    {
+        std::lock_guard<std::mutex> lock(cursorMutex_);
+        x = cursorX_;
+        y = cursorY_;
+    }
+    if (y < static_cast<int32_t>(desktopH_)) return false;
+    if (x < kToolbarBandX0 || x >= kToolbarBandX1) return false;
+    u = static_cast<float>(x - kToolbarBandX0) /
+        static_cast<float>(kToolbarBandX1 - kToolbarBandX0);
+    v = static_cast<float>(y - static_cast<int32_t>(desktopH_)) /
+        static_cast<float>(kToolbarBandHeight);
+    return true;
+}
+
 // ── public entry point ───────────────────────────────────────────────────────
 
 bool RdpInputForwarder::OnInputEvent(AInputEvent* event) {
@@ -73,7 +89,9 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
     // Compute delta from previous position and accumulate into the internal
     // absolute cursor.  This decouples us from the Android window size and
     // lets the cursor traverse the entire 5760x1080 RDP desktop.
+    // Y is allowed to extend into the toolbar band below the desktop.
     uint16_t x, y;
+    bool inToolbar = false;
     {
         std::lock_guard<std::mutex> lock(cursorMutex_);
         if (prevRawX_ >= 0.0f && prevRawY_ >= 0.0f) {
@@ -82,18 +100,26 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
             cursorX_ = std::clamp(cursorX_ + static_cast<int32_t>(dx),
                                   0, static_cast<int32_t>(desktopW_ - 1));
             cursorY_ = std::clamp(cursorY_ + static_cast<int32_t>(dy),
-                                  0, static_cast<int32_t>(desktopH_ - 1));
+                                  0, static_cast<int32_t>(desktopH_) + kToolbarBandHeight - 1);
         }
         prevRawX_ = rawX;
         prevRawY_ = rawY;
+        // RDP coordinates are clamped to the actual desktop bounds.
         x = static_cast<uint16_t>(cursorX_);
-        y = static_cast<uint16_t>(cursorY_);
+        y = static_cast<uint16_t>(std::min<int32_t>(cursorY_,
+                                                    static_cast<int32_t>(desktopH_) - 1));
+        inToolbar = (cursorY_ >= static_cast<int32_t>(desktopH_)) &&
+                    (cursorX_ >= kToolbarBandX0) && (cursorX_ < kToolbarBandX1);
     }
 
     switch (action) {
         case AMOTION_EVENT_ACTION_HOVER_MOVE:
         case AMOTION_EVENT_ACTION_MOVE:
-            freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, x, y);
+            // Suppress RDP move when in toolbar so the host cursor doesn't
+            // wander off the bottom edge of the screen.
+            if (!inToolbar) {
+                freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, x, y);
+            }
             break;
 
         case AMOTION_EVENT_ACTION_DOWN:
@@ -105,7 +131,12 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
             if (btn & AMOTION_EVENT_BUTTON_TERTIARY)  flags |= PTR_FLAGS_BUTTON3;
             if (flags == PTR_FLAGS_DOWN) flags |= PTR_FLAGS_BUTTON1;
             prevButtonState_ = btn;
-            freerdp_input_send_mouse_event(input, flags, x, y);
+            if (flags & PTR_FLAGS_BUTTON1) leftDown_.store(true);
+            // Toolbar consumes left clicks; right/middle still go to RDP.
+            if (!(inToolbar && (flags & PTR_FLAGS_BUTTON1) &&
+                  !(flags & (PTR_FLAGS_BUTTON2 | PTR_FLAGS_BUTTON3)))) {
+                freerdp_input_send_mouse_event(input, flags, x, y);
+            }
             break;
         }
 
@@ -115,13 +146,17 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
             const int32_t btn = AMotionEvent_getButtonState(event);
             const int32_t released = prevButtonState_ & ~btn;
             prevButtonState_ = btn;
-            // Release without PTR_FLAGS_DOWN means button up.
-            if (released & AMOTION_EVENT_BUTTON_SECONDARY)
+            if (released & AMOTION_EVENT_BUTTON_PRIMARY) leftDown_.store(false);
+            if (released & AMOTION_EVENT_BUTTON_SECONDARY) {
                 freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON2, x, y);
-            else if (released & AMOTION_EVENT_BUTTON_TERTIARY)
+            } else if (released & AMOTION_EVENT_BUTTON_TERTIARY) {
                 freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON3, x, y);
-            else
-                freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON1, x, y);
+            } else {
+                leftDown_.store(false);
+                if (!inToolbar) {
+                    freerdp_input_send_mouse_event(input, PTR_FLAGS_BUTTON1, x, y);
+                }
+            }
             break;
         }
 
@@ -174,14 +209,21 @@ void RdpInputForwarder::SendMouseMove(int32_t dx, int32_t dy) {
     if (!input) return;
 
     uint16_t x, y;
+    bool inToolbar = false;
     {
         std::lock_guard<std::mutex> lock(cursorMutex_);
         cursorX_ = std::clamp(cursorX_ + dx, 0, static_cast<int32_t>(desktopW_ - 1));
-        cursorY_ = std::clamp(cursorY_ + dy, 0, static_cast<int32_t>(desktopH_ - 1));
+        cursorY_ = std::clamp(cursorY_ + dy, 0,
+                              static_cast<int32_t>(desktopH_) + kToolbarBandHeight - 1);
         x = static_cast<uint16_t>(cursorX_);
-        y = static_cast<uint16_t>(cursorY_);
+        y = static_cast<uint16_t>(std::min<int32_t>(cursorY_,
+                                                    static_cast<int32_t>(desktopH_) - 1));
+        inToolbar = (cursorY_ >= static_cast<int32_t>(desktopH_)) &&
+                    (cursorX_ >= kToolbarBandX0) && (cursorX_ < kToolbarBandX1);
     }
-    freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, x, y);
+    if (!inToolbar) {
+        freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, x, y);
+    }
 }
 
 void RdpInputForwarder::SendMouseButton(uint16_t flags) {
@@ -189,11 +231,23 @@ void RdpInputForwarder::SendMouseButton(uint16_t flags) {
     if (!input) return;
 
     uint16_t x, y;
+    bool inToolbar = false;
     {
         std::lock_guard<std::mutex> lock(cursorMutex_);
         x = static_cast<uint16_t>(cursorX_);
-        y = static_cast<uint16_t>(cursorY_);
+        y = static_cast<uint16_t>(std::min<int32_t>(cursorY_,
+                                                    static_cast<int32_t>(desktopH_) - 1));
+        inToolbar = (cursorY_ >= static_cast<int32_t>(desktopH_)) &&
+                    (cursorX_ >= kToolbarBandX0) && (cursorX_ < kToolbarBandX1);
     }
+    // Track left-button state for ImGui injection.
+    if (flags & PTR_FLAGS_BUTTON1) {
+        leftDown_.store((flags & PTR_FLAGS_DOWN) != 0);
+    }
+    // Toolbar consumes left clicks; right/middle still go to RDP.
+    const bool isLeftOnly = (flags & PTR_FLAGS_BUTTON1) &&
+                            !(flags & (PTR_FLAGS_BUTTON2 | PTR_FLAGS_BUTTON3));
+    if (inToolbar && isLeftOnly) return;
     freerdp_input_send_mouse_event(input, flags, x, y);
 }
 
@@ -205,7 +259,8 @@ void RdpInputForwarder::SendMouseWheel(int32_t clicks) {
     {
         std::lock_guard<std::mutex> lock(cursorMutex_);
         x = static_cast<uint16_t>(cursorX_);
-        y = static_cast<uint16_t>(cursorY_);
+        y = static_cast<uint16_t>(std::min<int32_t>(cursorY_,
+                                                    static_cast<int32_t>(desktopH_) - 1));
     }
 
     uint16_t flags = PTR_FLAGS_WHEEL;

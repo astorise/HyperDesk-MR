@@ -15,6 +15,7 @@ class FrustumCuller;
 class VirtualMonitor;
 class StatusOverlay;
 class CursorOverlay;
+class ImGuiToolbar;
 class RdpInputForwarder;
 
 // XrCompositor drives the per-frame composition loop:
@@ -44,6 +45,9 @@ public:
         inputForwarder_ = forwarder;
     }
 
+    // Set an optional ImGuiToolbar to render below the central monitor.
+    void SetImGuiToolbar(ImGuiToolbar* toolbar) { imguiToolbar_ = toolbar; }
+
 private:
     XrContext&                      ctx_;
     XrPassthrough&                  passthrough_;
@@ -52,8 +56,10 @@ private:
     std::array<VirtualMonitor*, MonitorLayout::kMaxMonitors> monitors_;
     StatusOverlay*                  statusOverlay_ = nullptr;
     CursorOverlay*                  cursorOverlay_ = nullptr;
+    ImGuiToolbar*                   imguiToolbar_ = nullptr;
     RdpInputForwarder*              inputForwarder_ = nullptr;
 
-    // Reusable per-frame layer storage: passthrough + status overlay + monitors + cursor.
-    std::array<const XrCompositionLayerBaseHeader*, 3 + MonitorLayout::kMaxMonitors> layerPtrs_{};
+    // Reusable per-frame layer storage:
+    //   passthrough + status overlay + monitors + toolbar + cursor.
+    std::array<const XrCompositionLayerBaseHeader*, 4 + MonitorLayout::kMaxMonitors> layerPtrs_{};
 };
