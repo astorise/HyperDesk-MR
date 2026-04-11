@@ -48,10 +48,9 @@ target_include_directories(imgui PUBLIC
     ${imgui_SOURCE_DIR}
     ${imgui_SOURCE_DIR}/backends
 )
-target_compile_definitions(imgui PUBLIC
-    IMGUI_IMPL_VULKAN_NO_PROTOTYPES=0
-    VK_NO_PROTOTYPES=0
-)
+# Use Vulkan prototypes directly (matches the rest of the project).  Do NOT
+# define VK_NO_PROTOTYPES here — the Vulkan headers use #ifdef, so even
+# defining it to 0 strips the prototypes.
 target_link_libraries(imgui PUBLIC ${vulkan-lib})
 
 # ── Paths to third-party dependencies ─────────────────────────────────────────
