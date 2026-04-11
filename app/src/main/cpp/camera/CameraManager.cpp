@@ -13,6 +13,7 @@ static constexpr int32_t kImageWidth  = 640;
 static constexpr int32_t kImageHeight = 480;
 static constexpr int32_t kMaxImages   = 2;
 static constexpr int32_t kPermissionRequestCode = 4242;
+static constexpr auto kPermissionRequestCooldown = std::chrono::seconds(5);
 
 // Meta passthrough camera vendor tags.
 static constexpr uint32_t kMetaCameraSourceTag   = 0x80004d00;
@@ -83,6 +84,9 @@ void CameraManager::SetFrameCallback(FrameCallback cb) {
 
 bool CameraManager::Start() {
     if (running_.load()) return true;
+
+    // Recover from stale handles after asynchronous camera disconnect/error callbacks.
+    ReleaseResources();
     selectedCameraPosition_.store(255);
 
     if (!EnsureCameraPermissions()) {
@@ -221,7 +225,10 @@ bool CameraManager::HasPermission(const char* permission) {
     return result == 0;  // PackageManager.PERMISSION_GRANTED
 }
 
-void CameraManager::RequestCameraPermissions() {
+void CameraManager::RequestCameraPermissions(bool requestCamera, bool requestHeadsetCamera) {
+    if (!requestCamera && !requestHeadsetCamera) {
+        return;
+    }
     if (!activity_ || !activity_->vm || !activity_->clazz) {
         return;
     }
@@ -249,36 +256,53 @@ void CameraManager::RequestCameraPermissions() {
         env->DeleteLocalRef(activityClass);
         return;
     }
-    jobjectArray permissions = env->NewObjectArray(2, stringClass, nullptr);
+    const jsize permissionCount =
+        static_cast<jsize>((requestCamera ? 1 : 0) + (requestHeadsetCamera ? 1 : 0));
+    jobjectArray permissions = env->NewObjectArray(permissionCount, stringClass, nullptr);
     if (!permissions) {
         env->DeleteLocalRef(stringClass);
         env->DeleteLocalRef(activityClass);
         return;
     }
 
-    jstring cameraPermission = env->NewStringUTF("android.permission.CAMERA");
-    jstring headsetCameraPermission = env->NewStringUTF("horizonos.permission.HEADSET_CAMERA");
-    if (!cameraPermission || !headsetCameraPermission) {
-        if (headsetCameraPermission) env->DeleteLocalRef(headsetCameraPermission);
-        if (cameraPermission) env->DeleteLocalRef(cameraPermission);
-        env->DeleteLocalRef(permissions);
-        env->DeleteLocalRef(stringClass);
-        env->DeleteLocalRef(activityClass);
-        return;
+    jsize permissionIndex = 0;
+    jstring cameraPermission = nullptr;
+    if (requestCamera) {
+        cameraPermission = env->NewStringUTF("android.permission.CAMERA");
+        if (!cameraPermission) {
+            env->DeleteLocalRef(permissions);
+            env->DeleteLocalRef(stringClass);
+            env->DeleteLocalRef(activityClass);
+            return;
+        }
+        env->SetObjectArrayElement(permissions, permissionIndex++, cameraPermission);
     }
-    env->SetObjectArrayElement(permissions, 0, cameraPermission);
-    env->SetObjectArrayElement(permissions, 1, headsetCameraPermission);
+
+    jstring headsetCameraPermission = nullptr;
+    if (requestHeadsetCamera) {
+        headsetCameraPermission = env->NewStringUTF("horizonos.permission.HEADSET_CAMERA");
+        if (!headsetCameraPermission) {
+            if (cameraPermission) env->DeleteLocalRef(cameraPermission);
+            env->DeleteLocalRef(permissions);
+            env->DeleteLocalRef(stringClass);
+            env->DeleteLocalRef(activityClass);
+            return;
+        }
+        env->SetObjectArrayElement(permissions, permissionIndex++, headsetCameraPermission);
+    }
 
     env->CallVoidMethod(activity_->clazz, requestPermissions, permissions, kPermissionRequestCode);
     if (env->ExceptionCheck()) {
         env->ExceptionDescribe();
         env->ExceptionClear();
     } else {
-        LOGI("CameraManager: requested CAMERA + HEADSET_CAMERA permissions");
+        LOGI("CameraManager: requested permissions (CAMERA=%d HEADSET_CAMERA=%d)",
+             requestCamera ? 1 : 0,
+             requestHeadsetCamera ? 1 : 0);
     }
 
-    env->DeleteLocalRef(headsetCameraPermission);
-    env->DeleteLocalRef(cameraPermission);
+    if (headsetCameraPermission) env->DeleteLocalRef(headsetCameraPermission);
+    if (cameraPermission) env->DeleteLocalRef(cameraPermission);
     env->DeleteLocalRef(permissions);
     env->DeleteLocalRef(stringClass);
     env->DeleteLocalRef(activityClass);
@@ -287,19 +311,20 @@ void CameraManager::RequestCameraPermissions() {
 bool CameraManager::EnsureCameraPermissions() {
     const bool hasCamera = HasPermission("android.permission.CAMERA");
     const bool hasHeadsetCamera = HasPermission("horizonos.permission.HEADSET_CAMERA");
-    if (hasCamera && hasHeadsetCamera) {
+    // Quest runtime behavior differs across releases: some builds allow
+    // passthrough via CAMERA alone, others require HEADSET_CAMERA too.
+    if (hasCamera || hasHeadsetCamera) {
         return true;
     }
 
     const auto now = std::chrono::steady_clock::now();
-    constexpr auto kPermissionRequestCooldown = std::chrono::seconds(5);
     if (lastPermissionRequest_.time_since_epoch().count() == 0 ||
         now - lastPermissionRequest_ >= kPermissionRequestCooldown) {
-        RequestCameraPermissions();
+        RequestCameraPermissions(true, true);
         lastPermissionRequest_ = now;
     }
 
-    LOGW("CameraManager: missing camera permissions (CAMERA=%d HEADSET_CAMERA=%d)",
+    LOGW("CameraManager: no camera permission granted yet (CAMERA=%d HEADSET_CAMERA=%d)",
          hasCamera ? 1 : 0,
          hasHeadsetCamera ? 1 : 0);
     if (StatusOverlay::sInstance) {
@@ -435,7 +460,11 @@ bool CameraManager::CreateImageReader() {
     }
 
     AImageReader_ImageListener listener{this, OnImageAvailable};
-    AImageReader_setImageListener(imageReader_, &listener);
+    status = AImageReader_setImageListener(imageReader_, &listener);
+    if (status != AMEDIA_OK) {
+        LOGE("CameraManager: AImageReader_setImageListener failed: %d", status);
+        return false;
+    }
     return true;
 }
 
@@ -459,6 +488,19 @@ bool CameraManager::OpenCamera(const std::string& cameraId) {
                 StatusOverlay::sInstance->AddLog("[ERR] Camera open failed");
             }
         }
+        if (status == ACAMERA_ERROR_PERMISSION_DENIED) {
+            const bool hasCamera = HasPermission("android.permission.CAMERA");
+            const bool hasHeadsetCamera = HasPermission("horizonos.permission.HEADSET_CAMERA");
+            const auto now = std::chrono::steady_clock::now();
+            if (lastPermissionRequest_.time_since_epoch().count() == 0 ||
+                now - lastPermissionRequest_ >= kPermissionRequestCooldown) {
+                RequestCameraPermissions(!hasCamera, !hasHeadsetCamera);
+                lastPermissionRequest_ = now;
+            }
+            LOGW("CameraManager: open denied; permission state CAMERA=%d HEADSET_CAMERA=%d",
+                 hasCamera ? 1 : 0,
+                 hasHeadsetCamera ? 1 : 0);
+        }
         return false;
     }
 
@@ -472,16 +514,35 @@ bool CameraManager::OpenCamera(const std::string& cameraId) {
 
 bool CameraManager::CreateCaptureSession() {
     ANativeWindow* window = nullptr;
-    AImageReader_getWindow(imageReader_, &window);
-    if (!window) {
+    if (AImageReader_getWindow(imageReader_, &window) != AMEDIA_OK || !window) {
         LOGE("CameraManager: failed to get ANativeWindow from AImageReader");
         return false;
     }
 
-    ACameraOutputTarget_create(window, &outputTarget_);
-    ACaptureSessionOutputContainer_create(&outputContainer_);
-    ACaptureSessionOutput_create(window, &sessionOutput_);
-    ACaptureSessionOutputContainer_add(outputContainer_, sessionOutput_);
+    camera_status_t status = ACameraOutputTarget_create(window, &outputTarget_);
+    if (status != ACAMERA_OK || !outputTarget_) {
+        LOGE("CameraManager: ACameraOutputTarget_create failed: %d (%s)",
+             status, CameraStatusToString(status));
+        return false;
+    }
+    status = ACaptureSessionOutputContainer_create(&outputContainer_);
+    if (status != ACAMERA_OK || !outputContainer_) {
+        LOGE("CameraManager: ACaptureSessionOutputContainer_create failed: %d (%s)",
+             status, CameraStatusToString(status));
+        return false;
+    }
+    status = ACaptureSessionOutput_create(window, &sessionOutput_);
+    if (status != ACAMERA_OK || !sessionOutput_) {
+        LOGE("CameraManager: ACaptureSessionOutput_create failed: %d (%s)",
+             status, CameraStatusToString(status));
+        return false;
+    }
+    status = ACaptureSessionOutputContainer_add(outputContainer_, sessionOutput_);
+    if (status != ACAMERA_OK) {
+        LOGE("CameraManager: ACaptureSessionOutputContainer_add failed: %d (%s)",
+             status, CameraStatusToString(status));
+        return false;
+    }
 
     ACameraCaptureSession_stateCallbacks sessionCb{};
     sessionCb.context   = this;
@@ -489,10 +550,11 @@ bool CameraManager::CreateCaptureSession() {
     sessionCb.onReady   = OnSessionReady;
     sessionCb.onActive  = OnSessionActive;
 
-    camera_status_t status = ACameraDevice_createCaptureSession(
+    status = ACameraDevice_createCaptureSession(
         cameraDevice_, outputContainer_, &sessionCb, &captureSession_);
-    if (status != ACAMERA_OK) {
-        LOGE("CameraManager: createCaptureSession failed: %d", status);
+    if (status != ACAMERA_OK || !captureSession_) {
+        LOGE("CameraManager: createCaptureSession failed: %d (%s)",
+             status, CameraStatusToString(status));
         if (StatusOverlay::sInstance) {
             char buf[96];
             snprintf(buf, sizeof(buf), "cam: session create failed (%d)", status);
@@ -502,10 +564,25 @@ bool CameraManager::CreateCaptureSession() {
         return false;
     }
 
-    ACameraDevice_createCaptureRequest(cameraDevice_, TEMPLATE_PREVIEW, &captureRequest_);
-    ACaptureRequest_addTarget(captureRequest_, outputTarget_);
-    ACameraCaptureSession_setRepeatingRequest(captureSession_, nullptr, 1,
-                                               &captureRequest_, nullptr);
+    status = ACameraDevice_createCaptureRequest(cameraDevice_, TEMPLATE_PREVIEW, &captureRequest_);
+    if (status != ACAMERA_OK || !captureRequest_) {
+        LOGE("CameraManager: createCaptureRequest failed: %d (%s)",
+             status, CameraStatusToString(status));
+        return false;
+    }
+    status = ACaptureRequest_addTarget(captureRequest_, outputTarget_);
+    if (status != ACAMERA_OK) {
+        LOGE("CameraManager: addTarget failed: %d (%s)",
+             status, CameraStatusToString(status));
+        return false;
+    }
+    status = ACameraCaptureSession_setRepeatingRequest(captureSession_, nullptr, 1,
+                                                       &captureRequest_, nullptr);
+    if (status != ACAMERA_OK) {
+        LOGE("CameraManager: setRepeatingRequest failed: %d (%s)",
+             status, CameraStatusToString(status));
+        return false;
+    }
     if (StatusOverlay::sInstance) {
         StatusOverlay::sInstance->SetStatusLine(2, "cam: repeating request active");
     }

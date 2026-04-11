@@ -57,7 +57,7 @@ private:
 
     bool EnsureCameraPermissions();
     bool HasPermission(const char* permission);
-    void RequestCameraPermissions();
+    void RequestCameraPermissions(bool requestCamera, bool requestHeadsetCamera);
     void ReleaseResources();
     std::string FindCameraId();
     bool CreateImageReader();
