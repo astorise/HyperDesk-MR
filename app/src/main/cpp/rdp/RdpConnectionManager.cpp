@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cstring>
 #include <cstdio>
+#include <vector>
 
 namespace {
 
@@ -226,18 +227,31 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     auto* monitors = freerdp_settings_get_pointer_writable(settings, FreeRDP_MonitorDefArray);
     auto* monArray = static_cast<rdpMonitor*>(monitors);
     if (monArray) {
+        std::vector<uint32_t> monitorOrder;
+        monitorOrder.reserve(numMon);
         for (uint32_t i = 0; i < numMon; ++i) {
-            monArray[i] = {};
-            monArray[i].x          = (numMon == 1) ? 0 : DesktopLeftForMonitor(i);
-            monArray[i].y          = 0;
-            monArray[i].width      = kMonitorWidthPx;
-            monArray[i].height     = kMonitorHeightPx;
-            monArray[i].is_primary = (i == 0) ? 1 : 0;
-            monArray[i].attributes.physicalWidth  = 527;
-            monArray[i].attributes.physicalHeight = 296;
-            monArray[i].attributes.orientation    = ORIENTATION_LANDSCAPE;
-            monArray[i].attributes.desktopScaleFactor = 100;
-            monArray[i].attributes.deviceScaleFactor  = 100;
+            monitorOrder.push_back(i);
+        }
+        std::sort(monitorOrder.begin(), monitorOrder.end(),
+                  [numMon](uint32_t a, uint32_t b) {
+                      const int32_t leftA = (numMon == 1u) ? 0 : DesktopLeftForMonitor(a);
+                      const int32_t leftB = (numMon == 1u) ? 0 : DesktopLeftForMonitor(b);
+                      return leftA < leftB;
+                  });
+
+        for (uint32_t slot = 0; slot < numMon; ++slot) {
+            const uint32_t monitorIdx = monitorOrder[slot];
+            monArray[slot] = {};
+            monArray[slot].x          = (numMon == 1u) ? 0 : DesktopLeftForMonitor(monitorIdx);
+            monArray[slot].y          = 0;
+            monArray[slot].width      = kMonitorWidthPx;
+            monArray[slot].height     = kMonitorHeightPx;
+            monArray[slot].is_primary = (monitorIdx == 0u) ? 1 : 0;
+            monArray[slot].attributes.physicalWidth  = 527;
+            monArray[slot].attributes.physicalHeight = 296;
+            monArray[slot].attributes.orientation    = ORIENTATION_LANDSCAPE;
+            monArray[slot].attributes.desktopScaleFactor = 100;
+            monArray[slot].attributes.deviceScaleFactor  = 100;
         }
 
         LOGI("RDP: %u monitors declared at connect (desktop=%ux%u, primary at x=1920)",

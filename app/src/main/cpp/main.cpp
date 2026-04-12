@@ -89,8 +89,6 @@ struct AppState {
     bool                                   qrAddConnectionMode = false;
     uint32_t                               qrTargetMonitor = 0;
     bool                                   dragWasHeld = false;
-    bool                                   dragYawPivotValid = false;
-    XrVector3f                             dragYawPivot{0.0f, 0.0f, 0.0f};
 };
 
 // ── Android lifecycle callback ────────────────────────────────────────────────
@@ -657,28 +655,24 @@ void android_main(android_app* app) {
     };
 
     auto chooseSecondaryTargetMonitor = [&state]() -> uint32_t {
-        // Prefer right-side expansion first.
-        static constexpr uint32_t preferredOrder[] = {2u, 3u, 1u};
-        for (uint32_t idx : preferredOrder) {
-            if (idx >= MonitorLayout::kMaxMonitors) {
-                continue;
-            }
+        auto isAvailable = [&state](uint32_t idx) -> bool {
             if (state.monitorLayout->IsMonitorActive(idx)) {
-                continue;
+                return false;
             }
             if (state.secondaryRdpManagers[idx] && state.secondaryRdpManagers[idx]->IsConnected()) {
-                continue;
+                return false;
             }
-            return idx;
+            return true;
+        };
+
+        // Keep growth to the right first, then use the left slot (monitor 1).
+        for (uint32_t idx = 2u; idx < MonitorLayout::kMaxMonitors; ++idx) {
+            if (isAvailable(idx)) {
+                return idx;
+            }
         }
-        for (uint32_t idx = 4u; idx < MonitorLayout::kMaxMonitors; ++idx) {
-            if (state.monitorLayout->IsMonitorActive(idx)) {
-                continue;
-            }
-            if (state.secondaryRdpManagers[idx] && state.secondaryRdpManagers[idx]->IsConnected()) {
-                continue;
-            }
-            return idx;
+        if (1u < MonitorLayout::kMaxMonitors && isAvailable(1u)) {
+            return 1u;
         }
         return 0u;
     };
@@ -925,19 +919,6 @@ void android_main(android_app* app) {
                 if (!state.dragWasHeld) {
                     state.dragWasHeld = true;
                     state.inputForwarder->ResetMotionAccumulators();
-                    XrPosef headPose{};
-                    bool haveHeadPose = false;
-                    {
-                        std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
-                        if (state.latestHeadPoseValid) {
-                            headPose = state.latestHeadPose;
-                            haveHeadPose = true;
-                        }
-                    }
-                    state.dragYawPivotValid = haveHeadPose;
-                    if (haveHeadPose) {
-                        state.dragYawPivot = headPose.position;
-                    }
                     state.statusOverlay->AddLog("[OK] Drag active");
                 }
 
@@ -952,9 +933,18 @@ void android_main(android_app* app) {
                 if (dx != 0 || dy != 0 || wheelSteps != 0) {
                     if (dx != 0) {
                         const float yawDelta = static_cast<float>(-dx) * kDragYawPerPixel;
-                        if (state.dragYawPivotValid) {
+                        XrPosef headPose{};
+                        bool haveHeadPose = false;
+                        {
+                            std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                            if (state.latestHeadPoseValid) {
+                                headPose = state.latestHeadPose;
+                                haveHeadPose = true;
+                            }
+                        }
+                        if (haveHeadPose) {
                             state.monitorLayout->RotateAnchorYawAroundPivot(
-                                yawDelta, state.dragYawPivot);
+                                yawDelta, headPose.position);
                         } else {
                             state.monitorLayout->RotateAnchorYaw(yawDelta);
                         }
@@ -966,7 +956,6 @@ void android_main(android_app* app) {
                 }
             } else if (state.dragWasHeld) {
                 state.dragWasHeld = false;
-                state.dragYawPivotValid = false;
                 state.statusOverlay->AddLog("[OK] Drag released");
             }
         }

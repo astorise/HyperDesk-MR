@@ -9,6 +9,21 @@
 static constexpr uint32_t kPhysWidthMm  = 527;
 static constexpr uint32_t kPhysHeightMm = 296;
 
+namespace {
+INT32 DesktopLeftForMonitor(uint32_t monitorIdx, uint32_t monitorCount) {
+    if (monitorCount <= 1u) {
+        return 0;
+    }
+    if (monitorIdx == 0u) {
+        return 1920;  // center (primary)
+    }
+    if (monitorIdx == 1u) {
+        return 0;     // left
+    }
+    return static_cast<INT32>(monitorIdx * 1920u);  // right side growth
+}
+}  // namespace
+
 RdpDisplayControl::RdpDisplayControl(MonitorLayout& layout)
     : layout_(&layout) {}
 
@@ -133,22 +148,26 @@ RdpDisplayControl::BuildLayoutPDU(uint32_t monitorCount) const {
     const uint32_t capped = std::min<uint32_t>(monitorCount, MonitorLayout::kMaxMonitors);
     entries.reserve(capped);
 
-    // Desktop X order:
-    //   monitor 1 @ x=0, monitor 0 @ x=1920, then monitor i @ x=i*1920 for i>=2.
-    // Monitor 0 remains primary.
+    struct LayoutCandidate {
+        uint32_t monitorIdx;
+        INT32 left;
+    };
+    std::vector<LayoutCandidate> ordered;
+    ordered.reserve(capped);
     for (uint32_t i = 0; i < capped; ++i) {
-        INT32 left = static_cast<INT32>(i * 1920);
-        if (capped == 1u) {
-            left = 0;
-        } else if (i == 0u) {
-            left = 1920;
-        } else if (i == 1u) {
-            left = 0;
-        }
+        ordered.push_back({i, DesktopLeftForMonitor(i, capped)});
+    }
+    std::sort(ordered.begin(), ordered.end(),
+              [](const LayoutCandidate& a, const LayoutCandidate& b) {
+                  return a.left < b.left;
+              });
 
+    // Send entries left-to-right so monitor numbering is monotonic in the host OS,
+    // while keeping monitor 0 as the primary surface.
+    for (const LayoutCandidate& candidate : ordered) {
         DISPLAY_CONTROL_MONITOR_LAYOUT m{};
-        m.Flags              = (i == 0) ? DISPLAY_CONTROL_MONITOR_PRIMARY : 0;
-        m.Left               = left;
+        m.Flags              = (candidate.monitorIdx == 0u) ? DISPLAY_CONTROL_MONITOR_PRIMARY : 0;
+        m.Left               = candidate.left;
         m.Top                = 0;
         m.Width              = 1920;
         m.Height             = 1080;

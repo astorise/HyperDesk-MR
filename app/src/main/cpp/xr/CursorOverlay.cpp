@@ -153,13 +153,12 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     float monitorYaw;
     if (splitRows) {
         monitorYaw = -static_cast<float>(monitorIdx / 2u) * kArcStep;
+    } else if (monitorIdx == 1u) {
+        monitorYaw = +kArcStep;
     } else if (monitorIdx == 0u) {
         monitorYaw = 0.0f;
     } else {
-        const uint32_t ring = (monitorIdx + 1u) / 2u;
-        const float magnitude = static_cast<float>(ring) * kArcStep;
-        const bool isLeft = (monitorIdx & 1u) == 1u;
-        monitorYaw = isLeft ? magnitude : -magnitude;
+        monitorYaw = -static_cast<float>(monitorIdx - 1u) * kArcStep;
     }
 
     float cursorAngle = monitorYaw + (localU - 0.5f) * centralAngle;
