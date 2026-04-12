@@ -88,7 +88,7 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
 
     // Compute delta from previous position and accumulate into the internal
     // absolute cursor.  This decouples us from the Android window size and
-    // lets the cursor traverse the entire 5760x1080 RDP desktop.
+    // lets the cursor traverse the full RDP desktop width (up to 7680x1080).
     // Y is allowed to extend into the toolbar band below the desktop.
     uint16_t x, y;
     bool inToolbar = false;

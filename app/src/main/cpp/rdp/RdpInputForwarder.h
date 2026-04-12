@@ -1,6 +1,7 @@
 #pragma once
 
 #include <android/input.h>
+#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <mutex>
@@ -16,11 +17,11 @@ public:
     void Detach() { instance_.store(nullptr); }
 
     void SetDesktopSize(uint32_t w, uint32_t h) {
-        desktopW_ = w;
-        desktopH_ = h;
+        desktopW_ = std::max<uint32_t>(1u, w);
+        desktopH_ = std::max<uint32_t>(1u, h);
         // Reset cursor to center of primary monitor.
-        cursorX_ = 1920 + 960;  // center of monitor 0 (at left=1920)
-        cursorY_ = 540;
+        cursorX_ = std::clamp<int32_t>(1920 + 960, 0, static_cast<int32_t>(desktopW_ - 1));
+        cursorY_ = std::clamp<int32_t>(540, 0, static_cast<int32_t>(desktopH_ - 1));
     }
 
     // Toolbar band: a virtual region below the desktop where mouse events are
@@ -89,7 +90,7 @@ private:
     int32_t prevButtonState_ = 0;
 
     // Sensitivity multiplier: Android window is small (~1280x800) but
-    // desktop is large (5760x1080). Scale deltas so full mouse sweep
+    // desktop is large (5760x1080 or 7680x1080). Scale deltas so full mouse sweep
     // covers the entire desktop.
     static constexpr float kMouseSensitivity = 4.5f;
 };

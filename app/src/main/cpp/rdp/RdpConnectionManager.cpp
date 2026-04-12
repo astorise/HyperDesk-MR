@@ -14,6 +14,40 @@
 #include <cstring>
 #include <cstdio>
 
+namespace {
+
+constexpr uint32_t kMonitorWidthPx = 1920;
+constexpr uint32_t kMonitorHeightPx = 1080;
+constexpr uint32_t kInitialMonitorCount = RdpDisplayControl::kDefaultMonitorCount;
+
+// Desktop X order:
+//   monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840, monitor 3 @ x=5760.
+int32_t DesktopLeftForMonitor(uint32_t monitorIdx) {
+    switch (monitorIdx) {
+        case 0: return 1920;  // center (primary)
+        case 1: return 0;     // left
+        case 2: return 3840;  // right
+        case 3: return 5760;  // far-left in VR arc
+        default:
+            return static_cast<int32_t>(monitorIdx * kMonitorWidthPx);
+    }
+}
+
+uint32_t MonitorFromDesktopOriginX(int32_t x) {
+    if (x < 1920) {
+        return 2;
+    }
+    if (x < 3840) {
+        return 0;
+    }
+    if (x < 5760) {
+        return 1;
+    }
+    return 3;
+}
+
+}  // namespace
+
 // Log to both logcat and on-screen debug overlay.
 static void ScreenLog(const char* fmt, ...) {
     char buf[256];
@@ -141,62 +175,37 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     // Accept self-signed RDP certificates without user prompt.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
 
-    // Declare 3 monitors at connection time so Windows creates 3 virtual displays.
+    // Start with 3 monitors; DisplayControl can dynamically grow to 4.
     freerdp_settings_set_bool(settings, FreeRDP_UseMultimon, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_ForceMultimon, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_HasMonitorAttributes, TRUE);
 
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  1920);
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, 1080);
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  kMonitorWidthPx);
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, kMonitorHeightPx);
 
-    // Allocate monitor array: monitor 0 = center (primary), 1 = left, 2 = right.
-    const uint32_t numMon = 3;
+    const uint32_t numMon = std::min<uint32_t>(kInitialMonitorCount, kMaxMonitors);
     freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, numMon);
     freerdp_settings_set_uint32(settings, FreeRDP_MonitorDefArraySize, numMon);
 
     auto* monitors = freerdp_settings_get_pointer_writable(settings, FreeRDP_MonitorDefArray);
     auto* monArray = static_cast<rdpMonitor*>(monitors);
     if (monArray) {
-        // Monitor 0: center (primary) at x=1920
-        monArray[0] = {};
-        monArray[0].x          = 1920;
-        monArray[0].y          = 0;
-        monArray[0].width      = 1920;
-        monArray[0].height     = 1080;
-        monArray[0].is_primary = 1;
-        monArray[0].attributes.physicalWidth  = 527;
-        monArray[0].attributes.physicalHeight = 296;
-        monArray[0].attributes.orientation    = ORIENTATION_LANDSCAPE;
-        monArray[0].attributes.desktopScaleFactor = 100;
-        monArray[0].attributes.deviceScaleFactor  = 100;
+        for (uint32_t i = 0; i < numMon; ++i) {
+            monArray[i] = {};
+            monArray[i].x          = DesktopLeftForMonitor(i);
+            monArray[i].y          = 0;
+            monArray[i].width      = kMonitorWidthPx;
+            monArray[i].height     = kMonitorHeightPx;
+            monArray[i].is_primary = (i == 0) ? 1 : 0;
+            monArray[i].attributes.physicalWidth  = 527;
+            monArray[i].attributes.physicalHeight = 296;
+            monArray[i].attributes.orientation    = ORIENTATION_LANDSCAPE;
+            monArray[i].attributes.desktopScaleFactor = 100;
+            monArray[i].attributes.deviceScaleFactor  = 100;
+        }
 
-        // Monitor 1: left at x=0
-        monArray[1] = {};
-        monArray[1].x          = 0;
-        monArray[1].y          = 0;
-        monArray[1].width      = 1920;
-        monArray[1].height     = 1080;
-        monArray[1].is_primary = 0;
-        monArray[1].attributes.physicalWidth  = 527;
-        monArray[1].attributes.physicalHeight = 296;
-        monArray[1].attributes.orientation    = ORIENTATION_LANDSCAPE;
-        monArray[1].attributes.desktopScaleFactor = 100;
-        monArray[1].attributes.deviceScaleFactor  = 100;
-
-        // Monitor 2: right at x=3840
-        monArray[2] = {};
-        monArray[2].x          = 3840;
-        monArray[2].y          = 0;
-        monArray[2].width      = 1920;
-        monArray[2].height     = 1080;
-        monArray[2].is_primary = 0;
-        monArray[2].attributes.physicalWidth  = 527;
-        monArray[2].attributes.physicalHeight = 296;
-        monArray[2].attributes.orientation    = ORIENTATION_LANDSCAPE;
-        monArray[2].attributes.desktopScaleFactor = 100;
-        monArray[2].attributes.deviceScaleFactor  = 100;
-
-        LOGI("RDP: 3 monitors declared (left=0, center=1920, right=3840)");
+        LOGI("RDP: %u monitors declared at connect (0@1920 primary, 1@0, 2@3840, 3@5760)",
+             numMon);
     } else {
         LOGE("RDP: failed to get MonitorDefArray pointer");
     }
@@ -347,8 +356,9 @@ BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
     auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
     if (ctx && ctx->self && ctx->self->inputForwarder_) {
         ctx->self->inputForwarder_->Attach(instance);
-        // Total desktop = 3 monitors × 1920 pixels wide.
-        ctx->self->inputForwarder_->SetDesktopSize(5760, 1080);
+        // Initial desktop size before display-control layout updates are applied.
+        ctx->self->inputForwarder_->SetDesktopSize(
+            kInitialMonitorCount * kMonitorWidthPx, kMonitorHeightPx);
     }
     return TRUE;
 }
@@ -607,15 +617,7 @@ UINT RdpConnectionManager::OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
     }
 
     // Use outputOriginX to map the surface to the correct VR monitor.
-    // RDP desktop layout: monitor 2 @ x=0, monitor 0 @ x=1920, monitor 1 @ x=3840.
-    uint32_t monitorIdx = UINT32_MAX;
-    if (pdu->outputOriginX < 1920) {
-        monitorIdx = 2;  // right
-    } else if (pdu->outputOriginX < 3840) {
-        monitorIdx = 0;  // center (primary)
-    } else {
-        monitorIdx = 1;  // left
-    }
+    uint32_t monitorIdx = MonitorFromDesktopOriginX(pdu->outputOriginX);
 
     // Find the slot for this surfaceId and reassign its monitor.
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
@@ -649,14 +651,7 @@ UINT RdpConnectionManager::OnGfxSurfaceToScaledOutput(
     }
 
     // Same desktop-position-based mapping as OnGfxSurfaceToOutput.
-    uint32_t monitorIdx = UINT32_MAX;
-    if (pdu->outputOriginX < 1920) {
-        monitorIdx = 2;  // right
-    } else if (pdu->outputOriginX < 3840) {
-        monitorIdx = 0;  // center
-    } else {
-        monitorIdx = 1;  // left
-    }
+    uint32_t monitorIdx = MonitorFromDesktopOriginX(pdu->outputOriginX);
 
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
         if (self->surfaceIds_[i] == pdu->surfaceId) {
@@ -740,27 +735,22 @@ void RdpConnectionManager::PushSoftwareFallbackFrame(RdpgfxClientContext* gfx) {
     const uint32_t gdiW = static_cast<uint32_t>(gdi->width);
     const uint32_t gdiH = static_cast<uint32_t>(gdi->height);
     const uint32_t stride = gdi->stride;
-    const uint32_t monW = 1920;
+    const uint32_t monW = kMonitorWidthPx;
 
-    // RDP desktop layout: monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840.
-    // Map each monitor to its horizontal crop region in the GDI buffer.
-    struct MonitorCrop { uint32_t idx; uint32_t offsetX; };
-    const MonitorCrop crops[] = {
-        {0, 1920},  // center (primary)
-        {1, 0},     // left
-        {2, 3840},  // right
-    };
+    for (uint32_t monitorIdx = 0; monitorIdx < kMaxMonitors; ++monitorIdx) {
+        if (monitorIdx >= monitorCount_ || !monitors_[monitorIdx]) continue;
 
-    for (const auto& crop : crops) {
-        if (crop.idx >= monitorCount_ || !monitors_[crop.idx]) continue;
-        if (crop.offsetX + monW > gdiW) continue;  // surface too narrow
+        const int32_t left = DesktopLeftForMonitor(monitorIdx);
+        if (left < 0) continue;
+        const uint32_t offsetX = static_cast<uint32_t>(left);
+        if (offsetX + monW > gdiW) continue;  // surface too narrow for this monitor slot.
 
-        const uint8_t* regionPtr = gdi->primary_buffer + static_cast<size_t>(crop.offsetX) * 4u;
-        monitors_[crop.idx]->SubmitSoftwareFrame(regionPtr, monW, gdiH, stride);
+        const uint8_t* regionPtr = gdi->primary_buffer + static_cast<size_t>(offsetX) * 4u;
+        monitors_[monitorIdx]->SubmitSoftwareFrame(regionPtr, monW, gdiH, stride);
 
-        if (++monitorFrameCount_[crop.idx] == 1) {
+        if (++monitorFrameCount_[monitorIdx] == 1) {
             ScreenLog("[OK] monitor[%u] first software GFX frame (crop x=%u %ux%u)",
-                      crop.idx, crop.offsetX, monW, gdiH);
+                      monitorIdx, offsetX, monW, gdiH);
         }
     }
 }

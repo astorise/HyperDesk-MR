@@ -128,7 +128,9 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         dy = desktopY_;
     }
 
-    // Desktop layout: monitor 2 @ x=[0,1920), monitor 0 @ x=[1920,3840), monitor 1 @ x=[3840,5760).
+    // Desktop layout:
+    //   monitor 2 @ x=[0,1920), monitor 0 @ x=[1920,3840),
+    //   monitor 1 @ x=[3840,5760), monitor 3 @ x=[5760,7680).
     int monitorIdx;
     float localU;
     if (dx < 1920) {
@@ -137,9 +139,12 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     } else if (dx < 3840) {
         monitorIdx = 0;  // center
         localU = static_cast<float>(dx - 1920) / 1920.0f;
-    } else {
+    } else if (dx < 5760) {
         monitorIdx = 1;  // left
         localU = static_cast<float>(dx - 3840) / 1920.0f;
+    } else {
+        monitorIdx = 3;  // far-left
+        localU = static_cast<float>(dx - 5760) / 1920.0f;
     }
     float localV = static_cast<float>(dy) / 1080.0f;
 
@@ -149,6 +154,7 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     switch (monitorIdx) {
         case 1:  monitorYaw =  kDecagonStep; break;
         case 2:  monitorYaw = -kDecagonStep; break;
+        case 3:  monitorYaw =  2.0f * kDecagonStep; break;
         default: monitorYaw =  0.0f;         break;
     }
 

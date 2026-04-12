@@ -13,6 +13,8 @@ class MonitorLayout;
 //   2. Sends DISPLAYCONTROL_MONITOR_LAYOUT_PDU defining the 4×4 grid (Task 5).
 class RdpDisplayControl {
 public:
+    static constexpr uint32_t kDefaultMonitorCount = 3;
+
     explicit RdpDisplayControl(MonitorLayout& layout);
     ~RdpDisplayControl() = default;
 
@@ -24,6 +26,7 @@ public:
 
     // Fallback used when the server exposes fewer monitors or no disp channel.
     void ActivateMonitorCount(uint32_t monitorCount);
+    bool RequestMonitorCount(uint32_t monitorCount);
 
     void SetMonitorConfigAppliedCallback(std::function<void(uint32_t)> callback);
 
@@ -39,6 +42,7 @@ private:
     MonitorLayout*     layout_      = nullptr;
     DispClientContext* ctx_         = nullptr;
     uint32_t           maxMonitors_ = 0;
+    uint32_t           requestedMonitorCount_ = kDefaultMonitorCount;
     std::function<void(uint32_t)> monitorConfigAppliedCallback_;
 
     std::vector<DISPLAY_CONTROL_MONITOR_LAYOUT> BuildLayoutPDU(uint32_t monitorCount) const;

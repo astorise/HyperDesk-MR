@@ -339,6 +339,14 @@ void android_main(android_app* app) {
     state.displayControl = std::make_unique<RdpDisplayControl>(*state.monitorLayout);
     state.displayControl->SetMonitorConfigAppliedCallback(
         [&state](uint32_t monitorCount) {
+            if (state.inputForwarder) {
+                // Keep legacy 3-monitor desktop mapping by default; extend to 4 when enabled.
+                const uint32_t desktopMonitors = (monitorCount >= 4u) ? 4u : 3u;
+                state.inputForwarder->SetDesktopSize(desktopMonitors * 1920u, 1080u);
+                LOGI("Updated RDP input desktop to %u x 1080 (%u monitor layout)",
+                     desktopMonitors * 1920u, monitorCount);
+            }
+
             std::lock_guard<std::mutex> lock(state.pendingLayoutAnchorMutex);
             if (!state.lastLayoutAnchorPoseValid) {
                 return;
@@ -547,13 +555,11 @@ void android_main(android_app* app) {
         return bestIndex;
     };
 
-    auto applyMonitorCount = [&state](uint32_t requestedCount) {
+    auto applyMonitorCount = [&state](uint32_t requestedCount) -> bool {
         const uint32_t capped =
             std::max<uint32_t>(1, std::min<uint32_t>(requestedCount, MonitorLayout::kMaxMonitors));
 
-        // Keep a fixed 3-monitor desktop mapping for cursor/input.
-        // We only change which monitors are rendered in VR.
-        state.displayControl->ActivateMonitorCount(capped);
+        return state.displayControl->RequestMonitorCount(capped);
     };
 
     // ── Main loop ─────────────────────────────────────────────────────────────
@@ -666,11 +672,14 @@ void android_main(android_app* app) {
                         if (currentCount >= MonitorLayout::kMaxMonitors) {
                             state.statusOverlay->AddLog("[WARN] No more screens available");
                         } else {
-                            applyMonitorCount(currentCount + 1);
-                            snprintf(buf, sizeof(buf), "[OK] Added screen (front monitor=%u)",
-                                     static_cast<unsigned>(frontMonitor));
-                            state.statusOverlay->AddLog(buf);
-                            state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                            if (applyMonitorCount(currentCount + 1)) {
+                                snprintf(buf, sizeof(buf), "[OK] Added screen (front monitor=%u)",
+                                         static_cast<unsigned>(frontMonitor));
+                                state.statusOverlay->AddLog(buf);
+                                state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                            } else {
+                                state.statusOverlay->AddLog("[ERR] Failed to apply monitor layout");
+                            }
                         }
                         break;
                     }
@@ -679,11 +688,14 @@ void android_main(android_app* app) {
                         if (currentCount <= 1) {
                             state.statusOverlay->AddLog("[WARN] At least one screen must stay active");
                         } else {
-                            applyMonitorCount(currentCount - 1);
-                            snprintf(buf, sizeof(buf), "[OK] Removed screen (front monitor=%u)",
-                                     static_cast<unsigned>(frontMonitor));
-                            state.statusOverlay->AddLog(buf);
-                            state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                            if (applyMonitorCount(currentCount - 1)) {
+                                snprintf(buf, sizeof(buf), "[OK] Removed screen (front monitor=%u)",
+                                         static_cast<unsigned>(frontMonitor));
+                                state.statusOverlay->AddLog(buf);
+                                state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                            } else {
+                                state.statusOverlay->AddLog("[ERR] Failed to apply monitor layout");
+                            }
                         }
                         break;
                     }

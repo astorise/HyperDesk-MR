@@ -19,8 +19,8 @@ struct MonitorDescriptor {
 
 class MonitorLayout {
 public:
-    static constexpr uint32_t kMaxMonitors = 3;
-    static constexpr uint32_t kGridCols = 3;
+    static constexpr uint32_t kMaxMonitors = 4;
+    static constexpr uint32_t kGridCols = 4;
     static constexpr uint32_t kGridRows = 1;
 
     // Physical spacing between monitor centers (meters).

@@ -8,7 +8,7 @@
 namespace {
 
 // ── Decagon geometry ─────────────────────────────────────────────────────────
-// 3 screens forming 3 consecutive sides of a regular 10-sided polygon.
+// Up to 4 screens arranged on consecutive sides of a regular 10-sided polygon.
 // Angle between adjacent screen centers as seen from the decagon center.
 constexpr float kDecagonStep = 2.0f * static_cast<float>(M_PI) / 10.0f;  // 36°
 // Distance from the viewer to the screen plane (meters).
@@ -76,13 +76,14 @@ XrQuaternionf YawQuat(float yaw) {
 }
 
 // Yaw angle for each monitor on the decagonal arc.
-// Monitor 0 = center (0°), 1 = left (+36°), 2 = right (-36°).
+// Monitor 0 = center (0°), 1 = left (+36°), 2 = right (-36°), 3 = far-left (+72°).
 // Positive yaw rotates the screen's front face to the right (toward center
 // for the left screen), keeping all panels facing the viewer at the origin.
 float MonitorYaw(uint32_t index) {
     switch (index) {
         case 1:  return  kDecagonStep;  // left
         case 2:  return -kDecagonStep;  // right
+        case 3:  return  2.0f * kDecagonStep;  // far-left
         default: return  0.0f;          // center
     }
 }
@@ -99,6 +100,7 @@ XrVector3f CanonicalPosition(uint32_t index, bool splitRows) {
             return {0.0f, +kSplitRowOffsetY, 0.0f};
         case 1:  // second row
         case 2:  // second row
+        case 3:  // second row
             return {0.0f, -kSplitRowOffsetY, 0.0f};
         default:
             return {0.0f, 0.0f, 0.0f};
@@ -141,7 +143,8 @@ void MonitorLayout::BuildDefaultLayout() {
 
     ApplyPrimaryAnchor();
 
-    LOGI("MonitorLayout: decagon arc (3 panels, R=%.2f, step=%.1f°)",
+    LOGI("MonitorLayout: decagon arc (%u panels max, R=%.2f, step=%.1f°)",
+         kMaxMonitors,
          kDecagonRadius, kDecagonStep * 180.0f / static_cast<float>(M_PI));
 }
 

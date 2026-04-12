@@ -14,6 +14,8 @@
 #include <string>
 #include <thread>
 
+#include "../scene/MonitorLayout.h"
+
 class RdpDisplayControl;
 class RdpConnectionManager;
 class RdpInputForwarder;
@@ -105,7 +107,7 @@ private:
     void SetupSettings(rdpSettings* settings, const ConnectionParams& params);
     void RunEventLoop();
 
-    static constexpr uint32_t kMaxMonitors = 3;
+    static constexpr uint32_t kMaxMonitors = MonitorLayout::kMaxMonitors;
 
     // VirtualMonitor pointers passed in at construction time.
     VirtualMonitor* monitors_[kMaxMonitors]{};
