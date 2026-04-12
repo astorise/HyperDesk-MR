@@ -13,6 +13,7 @@ namespace {
 constexpr float kDecagonStep = 2.0f * static_cast<float>(M_PI) / 10.0f;  // 36°
 // Distance from the viewer to the screen plane (meters).
 constexpr float kDecagonRadius = 2.6f;
+constexpr float kSplitRowOffsetY = 0.60f;
 
 XrVector3f Add(XrVector3f a, XrVector3f b) {
     return {a.x + b.x, a.y + b.y, a.z + b.z};
@@ -86,10 +87,22 @@ float MonitorYaw(uint32_t index) {
     }
 }
 
-// For cylinder layers the pose is at the cylinder center (the viewer).
-// All monitors share the same canonical position: the origin.
-XrVector3f CanonicalPosition([[maybe_unused]] uint32_t index) {
-    return {0.0f, 0.0f, 0.0f};
+// For cylinder layers, horizontal spread is controlled by per-monitor yaw.
+// Split mode only offsets monitors vertically.
+XrVector3f CanonicalPosition(uint32_t index, bool splitRows) {
+    if (!splitRows) {
+        return {0.0f, 0.0f, 0.0f};
+    }
+
+    switch (index) {
+        case 0:  // primary monitor: top row
+            return {0.0f, +kSplitRowOffsetY, 0.0f};
+        case 1:  // second row
+        case 2:  // second row
+            return {0.0f, -kSplitRowOffsetY, 0.0f};
+        default:
+            return {0.0f, 0.0f, 0.0f};
+    }
 }
 
 XrVector3f HeadForward(const XrQuaternionf& q) {
@@ -119,7 +132,7 @@ void MonitorLayout::BuildDefaultLayout() {
         m.index = i;
 
         const float yaw = MonitorYaw(i);
-        m.worldPose.position = CanonicalPosition(i);
+        m.worldPose.position = CanonicalPosition(i, splitRows_);
         m.worldPose.orientation = YawQuat(yaw);
         m.sizeMeters = {1.92f, 1.08f};
         // Normal points from screen toward the decagon center (the viewer).
@@ -182,6 +195,7 @@ void MonitorLayout::BindSurface(uint32_t monitorIndex, uint32_t rdpSurfaceId) {
 
 void MonitorLayout::SetActiveCount(uint32_t count) {
     const uint32_t capped = std::min(count, kMaxMonitors);
+    activeCount_ = capped;
 
     BuildDefaultLayout();
 
@@ -201,6 +215,20 @@ void MonitorLayout::SetActiveCount(uint32_t count) {
          hasPrimaryAnchor_ ? 1 : 0);
 }
 
+void MonitorLayout::SetSplitRows(bool enabled) {
+    if (splitRows_ == enabled) {
+        return;
+    }
+
+    splitRows_ = enabled;
+    BuildDefaultLayout();
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        monitors_[i].active = (i < activeCount_);
+    }
+
+    LOGI("MonitorLayout: split rows %s", splitRows_ ? "enabled" : "disabled");
+}
+
 void MonitorLayout::SetAllActive() {
     SetActiveCount(kMaxMonitors);
 }
@@ -210,13 +238,13 @@ void MonitorLayout::ApplyPrimaryAnchor() {
         return;
     }
 
-    const XrVector3f canonicalPrimary = CanonicalPosition(0);
+    const XrVector3f canonicalPrimary = CanonicalPosition(0, splitRows_);
 
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
         MonitorDescriptor& monitor = monitors_[i];
 
         // Position: rotate the offset from primary around the anchor.
-        const XrVector3f relative = Sub(CanonicalPosition(i), canonicalPrimary);
+        const XrVector3f relative = Sub(CanonicalPosition(i, splitRows_), canonicalPrimary);
         monitor.worldPose.position = Add(
             primaryAnchorPosition_,
             RotateVector(primaryAnchorOrientation_, relative));

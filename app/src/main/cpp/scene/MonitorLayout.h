@@ -47,6 +47,13 @@ public:
 
     // Mark the first N monitors as active and the rest inactive.
     void SetActiveCount(uint32_t count);
+    uint32_t GetActiveCount() const { return activeCount_; }
+
+    // Toggle visual split mode:
+    // - false: one horizontal row (default)
+    // - true: two rows
+    void SetSplitRows(bool enabled);
+    bool IsSplitRows() const { return splitRows_; }
 
     // Mark all monitors as active (called after layout PDU is sent).
     void SetAllActive();
@@ -58,4 +65,6 @@ private:
     XrVector3f                                  primaryAnchorPosition_{};
     XrQuaternionf                               primaryAnchorOrientation_{0.0f, 0.0f, 0.0f, 1.0f};
     bool                                        hasPrimaryAnchor_ = false;
+    bool                                        splitRows_ = false;
+    uint32_t                                    activeCount_ = 0;
 };

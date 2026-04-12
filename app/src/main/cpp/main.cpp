@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -80,8 +81,10 @@ struct AppState {
     RdpConnectionManager::ConnectionParams lastConnParams;
     bool                                   hasConnParams = false;
     bool                                   wasEverConnected = false;
+    bool                                   suppressAutoReconnect = false;
     uint64_t                               reconnectCooldownFrame = 0;
     uint64_t                               qrRetryFrame = 0;
+    bool                                   splitRowsEnabled = false;
 };
 
 // ── Android lifecycle callback ────────────────────────────────────────────────
@@ -118,6 +121,176 @@ static int32_t handle_input(android_app* a, AInputEvent* event) {
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
+
+namespace {
+
+XrVector3f RotateByQuaternion(const XrQuaternionf& q, XrVector3f v) {
+    const XrVector3f u{q.x, q.y, q.z};
+    const float s = q.w;
+
+    const XrVector3f crossUV{
+        u.y * v.z - u.z * v.y,
+        u.z * v.x - u.x * v.z,
+        u.x * v.y - u.y * v.x
+    };
+    const XrVector3f crossUCrossUV{
+        u.y * crossUV.z - u.z * crossUV.y,
+        u.z * crossUV.x - u.x * crossUV.z,
+        u.x * crossUV.y - u.y * crossUV.x
+    };
+
+    return {
+        v.x + 2.0f * (s * crossUV.x + crossUCrossUV.x),
+        v.y + 2.0f * (s * crossUV.y + crossUCrossUV.y),
+        v.z + 2.0f * (s * crossUV.z + crossUCrossUV.z)
+    };
+}
+
+float Dot(XrVector3f a, XrVector3f b) {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+XrVector3f NormalizeOrFallback(XrVector3f v, XrVector3f fallback) {
+    const float lenSq = Dot(v, v);
+    if (lenSq <= 1e-6f) {
+        return fallback;
+    }
+    const float invLen = 1.0f / std::sqrt(lenSq);
+    return {v.x * invLen, v.y * invLen, v.z * invLen};
+}
+
+#ifdef __ANDROID__
+struct ScopedJniEnv {
+    JavaVM* vm = nullptr;
+    JNIEnv* env = nullptr;
+    bool attached = false;
+
+    explicit ScopedJniEnv(JavaVM* javaVm) : vm(javaVm) {
+        if (!vm) return;
+        if (vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6) == JNI_OK) {
+            return;
+        }
+        if (vm->AttachCurrentThread(&env, nullptr) == JNI_OK) {
+            attached = true;
+        } else {
+            env = nullptr;
+        }
+    }
+
+    ~ScopedJniEnv() {
+        if (vm && attached) {
+            vm->DetachCurrentThread();
+        }
+    }
+};
+
+bool AdjustMediaVolume(ANativeActivity* activity, bool increase) {
+    if (!activity || !activity->vm || !activity->clazz) {
+        return false;
+    }
+
+    ScopedJniEnv jni(activity->vm);
+    if (!jni.env) {
+        return false;
+    }
+
+    JNIEnv* env = jni.env;
+    jclass activityClass = env->GetObjectClass(activity->clazz);
+    if (!activityClass) {
+        return false;
+    }
+
+    jmethodID getSystemService = env->GetMethodID(
+        activityClass, "getSystemService", "(Ljava/lang/String;)Ljava/lang/Object;");
+    if (!getSystemService) {
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+
+    jclass contextClass = env->FindClass("android/content/Context");
+    if (!contextClass) {
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+    jfieldID audioServiceField = env->GetStaticFieldID(
+        contextClass, "AUDIO_SERVICE", "Ljava/lang/String;");
+    if (!audioServiceField) {
+        env->DeleteLocalRef(contextClass);
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+    jobject audioServiceName = env->GetStaticObjectField(contextClass, audioServiceField);
+    if (!audioServiceName) {
+        env->DeleteLocalRef(contextClass);
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+
+    jobject audioManagerObject = env->CallObjectMethod(
+        activity->clazz, getSystemService, audioServiceName);
+    if (env->ExceptionCheck()) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+        env->DeleteLocalRef(audioServiceName);
+        env->DeleteLocalRef(contextClass);
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+    if (!audioManagerObject) {
+        env->DeleteLocalRef(audioServiceName);
+        env->DeleteLocalRef(contextClass);
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+
+    jclass audioManagerClass = env->FindClass("android/media/AudioManager");
+    if (!audioManagerClass) {
+        env->DeleteLocalRef(audioManagerObject);
+        env->DeleteLocalRef(audioServiceName);
+        env->DeleteLocalRef(contextClass);
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+
+    jmethodID adjustStreamVolume = env->GetMethodID(
+        audioManagerClass, "adjustStreamVolume", "(III)V");
+    jfieldID streamMusicField = env->GetStaticFieldID(audioManagerClass, "STREAM_MUSIC", "I");
+    jfieldID adjustRaiseField = env->GetStaticFieldID(audioManagerClass, "ADJUST_RAISE", "I");
+    jfieldID adjustLowerField = env->GetStaticFieldID(audioManagerClass, "ADJUST_LOWER", "I");
+    if (!adjustStreamVolume || !streamMusicField || !adjustRaiseField || !adjustLowerField) {
+        env->DeleteLocalRef(audioManagerClass);
+        env->DeleteLocalRef(audioManagerObject);
+        env->DeleteLocalRef(audioServiceName);
+        env->DeleteLocalRef(contextClass);
+        env->DeleteLocalRef(activityClass);
+        return false;
+    }
+
+    const jint streamMusic = env->GetStaticIntField(audioManagerClass, streamMusicField);
+    const jint direction = increase
+        ? env->GetStaticIntField(audioManagerClass, adjustRaiseField)
+        : env->GetStaticIntField(audioManagerClass, adjustLowerField);
+    env->CallVoidMethod(audioManagerObject, adjustStreamVolume, streamMusic, direction, 0);
+    const bool success = !env->ExceptionCheck();
+    if (!success) {
+        env->ExceptionDescribe();
+        env->ExceptionClear();
+    }
+
+    env->DeleteLocalRef(audioManagerClass);
+    env->DeleteLocalRef(audioManagerObject);
+    env->DeleteLocalRef(audioServiceName);
+    env->DeleteLocalRef(contextClass);
+    env->DeleteLocalRef(activityClass);
+    return success;
+}
+#else
+bool AdjustMediaVolume(ANativeActivity*, bool) {
+    return false;
+}
+#endif
+
+}  // namespace
 
 void android_main(android_app* app) {
     LOGI("HyperDesk-MR starting");
@@ -308,9 +481,20 @@ void android_main(android_app* app) {
             }
 
             state.statusOverlay->AddLog("Connecting...");
+            if (state.rdpManager->IsConnected()) {
+                state.statusOverlay->AddLog("[WARN] Replacing current RDP session");
+                state.suppressAutoReconnect = true;
+                state.rdpManager->Disconnect();
+            }
             state.lastConnParams = params;
             state.hasConnParams = true;
-            state.rdpManager->Connect(params);
+            state.wasEverConnected = false;
+            if (!state.rdpManager->Connect(params)) {
+                state.statusOverlay->AddLog("[ERR] Failed to start RDP connection");
+                state.suppressAutoReconnect = false;
+                return;
+            }
+            state.suppressAutoReconnect = false;
 
             // Retry evdev mouse if it wasn't found at startup.
             if (state.evdevMouse && !state.evdevMouse->IsRunning()) {
@@ -327,6 +511,50 @@ void android_main(android_app* app) {
         state.statusOverlay->AddLog("[WARN] Waiting for camera permission...");
         state.qrRetryFrame = kQrRestartCooldownFrames;
     }
+
+    auto getFrontMonitorIndex = [&state]() -> uint32_t {
+        XrPosef headPose{};
+        {
+            std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+            if (!state.latestHeadPoseValid) {
+                return 0;
+            }
+            headPose = state.latestHeadPose;
+        }
+
+        XrVector3f headForward = RotateByQuaternion(headPose.orientation, {0.0f, 0.0f, -1.0f});
+        headForward = NormalizeOrFallback(headForward, {0.0f, 0.0f, -1.0f});
+
+        uint32_t bestIndex = 0;
+        float bestDot = -2.0f;
+        for (uint32_t i = 0; i < MonitorLayout::kMaxMonitors; ++i) {
+            const MonitorDescriptor& mon = state.monitorLayout->GetMonitor(i);
+            if (!mon.active) {
+                continue;
+            }
+
+            const XrVector3f toMonitor{
+                -mon.forwardNormal.x,
+                -mon.forwardNormal.y,
+                -mon.forwardNormal.z
+            };
+            const float align = Dot(headForward, NormalizeOrFallback(toMonitor, {0.0f, 0.0f, -1.0f}));
+            if (align > bestDot) {
+                bestDot = align;
+                bestIndex = i;
+            }
+        }
+        return bestIndex;
+    };
+
+    auto applyMonitorCount = [&state](uint32_t requestedCount) {
+        const uint32_t capped =
+            std::max<uint32_t>(1, std::min<uint32_t>(requestedCount, MonitorLayout::kMaxMonitors));
+
+        // Keep a fixed 3-monitor desktop mapping for cursor/input.
+        // We only change which monitors are rendered in VR.
+        state.displayControl->ActivateMonitorCount(capped);
+    };
 
     // ── Main loop ─────────────────────────────────────────────────────────────
     uint64_t frameCount = 0;
@@ -426,6 +654,109 @@ void android_main(android_app* app) {
         }
 
         // ── Track connection state for auto-reconnect ──────────────────────
+        if (state.imguiToolbar && state.imguiToolbar->IsReady()) {
+            const int clicked = state.imguiToolbar->PollClickedButton();
+            if (clicked >= 0) {
+                const uint32_t frontMonitor = getFrontMonitorIndex();
+                char buf[160];
+
+                switch (clicked) {
+                    case ImGuiToolbar::BtnAdd: {
+                        const uint32_t currentCount = state.monitorLayout->GetActiveCount();
+                        if (currentCount >= MonitorLayout::kMaxMonitors) {
+                            state.statusOverlay->AddLog("[WARN] No more screens available");
+                        } else {
+                            applyMonitorCount(currentCount + 1);
+                            snprintf(buf, sizeof(buf), "[OK] Added screen (front monitor=%u)",
+                                     static_cast<unsigned>(frontMonitor));
+                            state.statusOverlay->AddLog(buf);
+                            state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                        }
+                        break;
+                    }
+                    case ImGuiToolbar::BtnRemove: {
+                        const uint32_t currentCount = state.monitorLayout->GetActiveCount();
+                        if (currentCount <= 1) {
+                            state.statusOverlay->AddLog("[WARN] At least one screen must stay active");
+                        } else {
+                            applyMonitorCount(currentCount - 1);
+                            snprintf(buf, sizeof(buf), "[OK] Removed screen (front monitor=%u)",
+                                     static_cast<unsigned>(frontMonitor));
+                            state.statusOverlay->AddLog(buf);
+                            state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                        }
+                        break;
+                    }
+                    case ImGuiToolbar::BtnDrag: {
+                        XrPosef headPose{};
+                        bool hasHeadPose = false;
+                        {
+                            std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                            if (state.latestHeadPoseValid) {
+                                headPose = state.latestHeadPose;
+                                hasHeadPose = true;
+                            }
+                        }
+
+                        if (hasHeadPose) {
+                            state.monitorLayout->AnchorPrimaryToHeadPose(headPose);
+                            state.statusOverlay->AddLog("[OK] Screen wall moved in front of you");
+                            state.xrContext->TriggerHapticPulse(0.6f, 120000000);
+                        } else {
+                            state.statusOverlay->AddLog("[WARN] Head pose unavailable");
+                        }
+                        break;
+                    }
+                    case ImGuiToolbar::BtnQrCode: {
+                        if (state.qrScanner->IsRunning()) {
+                            state.statusOverlay->AddLog("[WARN] QR scanner already active");
+                        } else if (state.qrScanner->Start()) {
+                            state.statusOverlay->AddLog("[OK] QR scanner started");
+                            state.statusOverlay->AddLog("Scan QR to connect RDP");
+                            state.qrRetryFrame = frameCount + kQrRestartCooldownFrames;
+                            state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                        } else {
+                            state.statusOverlay->AddLog("[ERR] Unable to start QR scanner");
+                            state.qrRetryFrame = frameCount + kQrRestartCooldownFrames;
+                        }
+                        break;
+                    }
+                    case ImGuiToolbar::BtnSplitScreen: {
+                        state.splitRowsEnabled = !state.splitRowsEnabled;
+                        state.monitorLayout->SetSplitRows(state.splitRowsEnabled);
+                        state.statusOverlay->AddLog(
+                            state.splitRowsEnabled
+                                ? "[OK] Split mode: 2 rows"
+                                : "[OK] Split mode: 1 row");
+                        state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                        break;
+                    }
+                    case ImGuiToolbar::BtnVolumeDown: {
+                        if (AdjustMediaVolume(app->activity, true)) {
+                            snprintf(buf, sizeof(buf), "[OK] Volume up (front monitor=%u)",
+                                     static_cast<unsigned>(frontMonitor));
+                            state.statusOverlay->AddLog(buf);
+                        } else {
+                            state.statusOverlay->AddLog("[ERR] Failed to change volume");
+                        }
+                        break;
+                    }
+                    case ImGuiToolbar::BtnVolumeUp: {
+                        if (AdjustMediaVolume(app->activity, false)) {
+                            snprintf(buf, sizeof(buf), "[OK] Volume down (front monitor=%u)",
+                                     static_cast<unsigned>(frontMonitor));
+                            state.statusOverlay->AddLog(buf);
+                        } else {
+                            state.statusOverlay->AddLog("[ERR] Failed to change volume");
+                        }
+                        break;
+                    }
+                    default:
+                        break;
+                }
+            }
+        }
+
         if (state.rdpManager->IsConnected()) {
             state.wasEverConnected = true;
         }
@@ -446,6 +777,7 @@ void android_main(android_app* app) {
         // Only reconnect after a previously successful connection drops —
         // never during the initial connect (wasEverConnected guards this).
         if (state.hasConnParams && state.wasEverConnected
+            && !state.suppressAutoReconnect
             && !state.rdpManager->IsConnected()
             && frameCount > state.reconnectCooldownFrame) {
             LOGI("RDP disconnected — attempting reconnection");
