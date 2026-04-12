@@ -61,7 +61,7 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
         }
 
         // Cylinder layer: each screen spans one configured arc step.
-        constexpr float kCylinderRadius = 1.6f;
+        constexpr float kCylinderRadius = 1.35f;
         const float centralAngle = MonitorLayout::kAngularStepRadians;
         const float aspectRatio  = 16.0f / 9.0f;
 
@@ -91,7 +91,7 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
                                              inputForwarder_->IsLeftButtonDown());
             }
 
-            constexpr float kCylinderRadius = 1.6f;
+            constexpr float kCylinderRadius = 1.35f;
             constexpr float kAspectRatio = 16.0f / 9.0f;
             if (auto* tbLayer = imguiToolbar_->GetCompositionLayer(
                     ctx_.GetWorldSpace(), mon0.worldPose,
@@ -111,7 +111,7 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
         // Use monitor 0's pose as the cylinder center (all monitors share the same center).
         const MonitorDescriptor& mon0 = layout_.GetMonitor(0);
         if (mon0.active) {
-            constexpr float kCylinderRadius = 1.6f;
+            constexpr float kCylinderRadius = 1.35f;
             constexpr float kAspectRatio = 16.0f / 9.0f;
 
             if (auto* cursorLayer = cursorOverlay_->GetCompositionLayer(

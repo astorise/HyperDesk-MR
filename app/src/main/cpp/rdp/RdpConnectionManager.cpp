@@ -227,6 +227,7 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     auto* monitors = freerdp_settings_get_pointer_writable(settings, FreeRDP_MonitorDefArray);
     auto* monArray = static_cast<rdpMonitor*>(monitors);
     if (monArray) {
+        const uint32_t primaryMonitorIdx = (numMon <= 1u) ? 0u : 1u;
         std::vector<uint32_t> monitorOrder;
         monitorOrder.reserve(numMon);
         for (uint32_t i = 0; i < numMon; ++i) {
@@ -246,7 +247,7 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
             monArray[slot].y          = 0;
             monArray[slot].width      = kMonitorWidthPx;
             monArray[slot].height     = kMonitorHeightPx;
-            monArray[slot].is_primary = (monitorIdx == 0u) ? 1 : 0;
+            monArray[slot].is_primary = (monitorIdx == primaryMonitorIdx) ? 1 : 0;
             monArray[slot].attributes.physicalWidth  = 527;
             monArray[slot].attributes.physicalHeight = 296;
             monArray[slot].attributes.orientation    = ORIENTATION_LANDSCAPE;
@@ -254,8 +255,10 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
             monArray[slot].attributes.deviceScaleFactor  = 100;
         }
 
-        LOGI("RDP: %u monitors declared at connect (desktop=%ux%u, primary at x=1920)",
-             numMon, desktopWidth, kMonitorHeightPx);
+        const int32_t primaryLeft =
+            (numMon <= 1u) ? 0 : DesktopLeftForMonitor(primaryMonitorIdx);
+        LOGI("RDP: %u monitors declared at connect (desktop=%ux%u, primary at x=%d)",
+             numMon, desktopWidth, kMonitorHeightPx, primaryLeft);
     } else {
         LOGE("RDP: failed to get MonitorDefArray pointer");
     }

@@ -25,7 +25,6 @@ constexpr const char* kButtonAssetPaths[ImGuiToolbar::kButtonCount] = {
 
 constexpr float kToolbarSizeMeters   = 0.50f;   // toolbar quad width  in metres
 constexpr float kToolbarHeightMeters = 0.0625f; // toolbar quad height in metres (8:1 aspect)
-constexpr float kToolbarYOffset      = -0.34f;  // metres below cylinder center
 constexpr float kToolbarZPull        = 0.01f;   // pull toward viewer (less than cursor)
 }  // namespace
 
@@ -108,8 +107,8 @@ const XrCompositionLayerQuad* ImGuiToolbar::GetCompositionLayer(
         XrSpace worldSpace,
         const XrPosef& cylinderCenter,
         float cylinderRadius,
-        float /*centralAngle*/,
-        float /*aspectRatio*/) {
+        float centralAngle,
+        float aspectRatio) {
     if (!ready_) return nullptr;
 
     // Acquire swapchain image.
@@ -132,10 +131,13 @@ const XrCompositionLayerQuad* ImGuiToolbar::GetCompositionLayer(
     xrReleaseSwapchainImage(swapchain_, &releaseInfo);
 
     // Build the composition layer in world space.
-    // Position: directly under monitor 0, on the cylinder surface, pulled toward viewer.
+    // Position: directly under monitor 0, touching the bottom edge of the
+    // monitor cylinder, on the same radius, slightly pulled toward viewer.
     float r  = cylinderRadius - kToolbarZPull;
     float wx = 0.0f;          // local X = 0 (centered)
-    float wy = kToolbarYOffset;
+    const float safeAspect = (aspectRatio > 1e-4f) ? aspectRatio : (16.0f / 9.0f);
+    const float cylinderHeight = cylinderRadius * centralAngle / safeAspect;
+    const float wy = -0.5f * cylinderHeight - 0.5f * kToolbarHeightMeters;
     float wz = -r;            // local Z = -r (in front)
 
     // Rotate by cylinderCenter.orientation (quaternion).

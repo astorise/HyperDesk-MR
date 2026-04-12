@@ -162,11 +162,14 @@ RdpDisplayControl::BuildLayoutPDU(uint32_t monitorCount) const {
                   return a.left < b.left;
               });
 
-    // Send entries left-to-right so monitor numbering is monotonic in the host OS,
-    // while keeping monitor 0 as the primary surface.
+    // Send entries left-to-right so monitor numbering is monotonic in the host OS.
+    // For multi-monitor sessions, make the left-most monitor primary so Windows
+    // labels become 1,2,3,... from left to right.
+    const uint32_t primaryMonitorIdx = (capped <= 1u) ? 0u : 1u;
     for (const LayoutCandidate& candidate : ordered) {
         DISPLAY_CONTROL_MONITOR_LAYOUT m{};
-        m.Flags              = (candidate.monitorIdx == 0u) ? DISPLAY_CONTROL_MONITOR_PRIMARY : 0;
+        m.Flags              =
+            (candidate.monitorIdx == primaryMonitorIdx) ? DISPLAY_CONTROL_MONITOR_PRIMARY : 0;
         m.Left               = candidate.left;
         m.Top                = 0;
         m.Width              = 1920;

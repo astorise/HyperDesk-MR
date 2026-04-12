@@ -19,18 +19,18 @@ public:
     void SetDesktopSize(uint32_t w, uint32_t h) {
         desktopW_ = std::max<uint32_t>(1u, w);
         desktopH_ = std::max<uint32_t>(1u, h);
-        // Reset cursor to center of primary monitor.
-        const int32_t primaryLeft = (desktopW_ <= 1920u) ? 0 : 1920;
-        cursorX_ = std::clamp<int32_t>(primaryLeft + 960, 0, static_cast<int32_t>(desktopW_ - 1));
+        // Reset cursor to the center of monitor[0] (toolbar anchor monitor).
+        const int32_t toolbarAnchorLeft = (desktopW_ <= 1920u) ? 0 : 1920;
+        cursorX_ = std::clamp<int32_t>(toolbarAnchorLeft + 960, 0, static_cast<int32_t>(desktopW_ - 1));
         cursorY_ = std::clamp<int32_t>(540, 0, static_cast<int32_t>(desktopH_ - 1));
     }
 
-    // Toolbar band: tuned to match ImGuiToolbar quad size/offset under primary monitor.
-    // Horizontal: central half of the primary monitor (to avoid edge drift).
-    // Vertical: starts below desktop by an offset (y0), then a compact hit height.
+    // Toolbar band: tuned to match ImGuiToolbar quad touching the monitor bottom.
+    // Horizontal: central half of monitor[0] (toolbar anchor monitor).
+    // Vertical: starts just below desktop to match the toolbar seam.
     static constexpr int32_t kToolbarBandLocalX0 = 480;
     static constexpr int32_t kToolbarBandLocalX1 = 1440;
-    static constexpr int32_t kToolbarBandY0     = 52;
+    static constexpr int32_t kToolbarBandY0     = 8;
     static constexpr int32_t kToolbarBandHeight = 120;
 
     // Returns true if the cursor is currently inside the toolbar band, and
