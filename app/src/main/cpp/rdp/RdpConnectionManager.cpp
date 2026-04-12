@@ -18,7 +18,6 @@ namespace {
 
 constexpr uint32_t kMonitorWidthPx = 1920;
 constexpr uint32_t kMonitorHeightPx = 1080;
-constexpr uint32_t kInitialMonitorCount = RdpDisplayControl::kDefaultMonitorCount;
 
 // Desktop X order:
 //   monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840, monitor 3 @ x=5760.
@@ -69,7 +68,11 @@ RdpConnectionManager::RdpConnectionManager(RdpDisplayControl& displayControl,
     : displayControl_(displayControl),
       monitorCount_(std::min(monitorCount, kMaxMonitors)),
       manageDisplayLayout_(manageDisplayLayout),
-      attachInputForwarder_(attachInputForwarder) {
+      attachInputForwarder_(attachInputForwarder),
+      initialMonitorCount_(manageDisplayLayout
+          ? std::max<uint32_t>(1u, std::min<uint32_t>(RdpDisplayControl::kDefaultMonitorCount,
+                                                      kMaxMonitors))
+          : 1u) {
     uint32_t count = std::min(monitorCount, kMaxMonitors);
     for (uint32_t i = 0; i < count; ++i) monitors_[i] = monitors[i];
     std::fill(std::begin(surfaceIds_), std::end(surfaceIds_), UINT32_MAX);
@@ -84,6 +87,14 @@ RdpConnectionManager::~RdpConnectionManager() {
 void RdpConnectionManager::SetErrorCallback(ErrorCallback cb) {
     std::lock_guard lock(errorCbMutex_);
     errorCallback_ = std::move(cb);
+}
+
+void RdpConnectionManager::SetInitialMonitorCount(uint32_t monitorCount) {
+    if (!manageDisplayLayout_) {
+        return;
+    }
+    initialMonitorCount_ =
+        std::max<uint32_t>(1u, std::min<uint32_t>(monitorCount, kMaxMonitors));
 }
 
 // ── Connect ───────────────────────────────────────────────────────────────────
@@ -179,8 +190,8 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     // Accept self-signed RDP certificates without user prompt.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
 
-    // Start with 3 monitors for the primary session.
-    // Secondary sessions (single-screen) keep their requested count.
+    // Primary session starts with the configured monitor count; secondary
+    // sessions (single-screen) keep their requested count.
     freerdp_settings_set_bool(settings, FreeRDP_UseMultimon, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_ForceMultimon, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_HasMonitorAttributes, TRUE);
@@ -189,7 +200,7 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, kMonitorHeightPx);
 
     const uint32_t requestedMonitors = manageDisplayLayout_
-        ? kInitialMonitorCount
+        ? initialMonitorCount_
         : std::max<uint32_t>(1u, monitorCount_);
     const uint32_t numMon = std::min<uint32_t>(requestedMonitors, kMaxMonitors);
     freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, numMon);
@@ -366,7 +377,7 @@ BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
         ctx->self->inputForwarder_->Attach(instance);
         // Initial desktop size before display-control layout updates are applied.
         ctx->self->inputForwarder_->SetDesktopSize(
-            kInitialMonitorCount * kMonitorWidthPx, kMonitorHeightPx);
+            ctx->self->initialMonitorCount_ * kMonitorWidthPx, kMonitorHeightPx);
     }
     return TRUE;
 }

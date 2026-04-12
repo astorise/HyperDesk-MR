@@ -53,6 +53,8 @@ public:
     void SetErrorCallback(ErrorCallback cb);
 
     void SetInputForwarder(RdpInputForwarder* fwd) { inputForwarder_ = fwd; }
+    void SetInitialMonitorCount(uint32_t monitorCount);
+    uint32_t GetInitialMonitorCount() const { return initialMonitorCount_; }
 
     bool Connect(const ConnectionParams& params);
     void Disconnect();
@@ -156,6 +158,7 @@ private:
     bool softwareFallbackLogged_ = false;
     bool manageDisplayLayout_ = true;
     bool attachInputForwarder_ = true;
+    uint32_t initialMonitorCount_ = 1u;
 
     void PushSoftwareFallbackFrame(RdpgfxClientContext* gfx);
 

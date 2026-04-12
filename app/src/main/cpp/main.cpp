@@ -404,6 +404,7 @@ void android_main(android_app* app) {
         const char* msg = ErrorUtils::RdpErrorToString(errorCode);
         const char* hint = ErrorUtils::RdpErrorHint(errorCode);
         char buf[128];
+        state.suppressAutoReconnect = false;
 
         state.statusOverlay->SetStatusLine(0, "rdp: connect failed");
         snprintf(buf, sizeof(buf), "rdp: 0x%08X", errorCode);
@@ -607,6 +608,8 @@ void android_main(android_app* app) {
     auto applyMonitorCount = [&state](uint32_t requestedCount) -> bool {
         const uint32_t capped =
             std::max<uint32_t>(1, std::min<uint32_t>(requestedCount, MonitorLayout::kMaxMonitors));
+        const uint32_t currentCount =
+            std::max<uint32_t>(1u, state.monitorLayout->GetActiveCount());
 
         for (uint32_t i = capped; i < MonitorLayout::kMaxMonitors; ++i) {
             if (state.secondaryRdpManagers[i]) {
@@ -615,7 +618,38 @@ void android_main(android_app* app) {
             }
         }
 
-        return state.displayControl->RequestMonitorCount(capped);
+        // Grow by reconnecting with a larger initial monitor declaration.
+        if (capped > currentCount && state.rdpManager->IsConnected() && state.hasConnParams) {
+            const uint32_t previousInitial = state.rdpManager->GetInitialMonitorCount();
+
+            state.displayControl->SetRequestedMonitorCount(capped);
+            state.rdpManager->SetInitialMonitorCount(capped);
+            state.statusOverlay->AddLog("[OK] Reconnecting RDP to apply monitor growth...");
+
+            state.suppressAutoReconnect = true;
+            state.rdpManager->Disconnect();
+            if (!state.rdpManager->Connect(state.lastConnParams)) {
+                state.rdpManager->SetInitialMonitorCount(previousInitial);
+                state.displayControl->SetRequestedMonitorCount(previousInitial);
+                state.suppressAutoReconnect = false;
+                return false;
+            }
+            return true;
+        }
+
+        if (!state.displayControl->RequestMonitorCount(capped)) {
+            return false;
+        }
+        state.rdpManager->SetInitialMonitorCount(capped);
+
+        const uint32_t applied = state.monitorLayout->GetActiveCount();
+        if (applied != capped) {
+            LOGW("Monitor layout request mismatch: requested=%u applied=%u",
+                 capped, applied);
+            return false;
+        }
+
+        return true;
     };
 
     auto chooseSecondaryTargetMonitor = [&state]() -> uint32_t {
@@ -881,6 +915,9 @@ void android_main(android_app* app) {
 
         if (state.rdpManager->IsConnected()) {
             state.wasEverConnected = true;
+            if (state.suppressAutoReconnect) {
+                state.suppressAutoReconnect = false;
+            }
         }
         if (state.qrScanner && !state.hasConnParams && !state.qrScanner->IsRunning()
             && frameCount >= state.qrRetryFrame) {

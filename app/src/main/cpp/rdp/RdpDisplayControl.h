@@ -27,6 +27,7 @@ public:
     // Fallback used when the server exposes fewer monitors or no disp channel.
     void ActivateMonitorCount(uint32_t monitorCount);
     bool RequestMonitorCount(uint32_t monitorCount);
+    void SetRequestedMonitorCount(uint32_t monitorCount);
 
     void SetMonitorConfigAppliedCallback(std::function<void(uint32_t)> callback);
 

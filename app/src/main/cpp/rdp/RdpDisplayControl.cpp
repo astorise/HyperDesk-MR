@@ -47,9 +47,12 @@ UINT RdpDisplayControl::OnDisplayControlCaps(DispClientContext* ctx,
         return CHANNEL_RC_OK;
     }
 
-    if (monitorCount < MonitorLayout::kMaxMonitors) {
-        LOGW("DisplayControl: server supports only %u monitor(s), using degraded layout",
-             monitorCount);
+    if (maxNumMonitors < requestedCount) {
+        LOGW("DisplayControl: server caps monitor count to %u (requested=%u)",
+             maxNumMonitors, requestedCount);
+    } else if (requestedCount < MonitorLayout::kMaxMonitors) {
+        LOGI("DisplayControl: applying initial monitor request %u/%u",
+             requestedCount, MonitorLayout::kMaxMonitors);
     }
 
     return self->SendMonitorLayout(monitorCount);
@@ -92,10 +95,26 @@ void RdpDisplayControl::ActivateMonitorCount(uint32_t monitorCount) {
     }
 }
 
-bool RdpDisplayControl::RequestMonitorCount(uint32_t monitorCount) {
-    const uint32_t capped =
+void RdpDisplayControl::SetRequestedMonitorCount(uint32_t monitorCount) {
+    requestedMonitorCount_ =
         std::max<uint32_t>(1u, std::min<uint32_t>(monitorCount, MonitorLayout::kMaxMonitors));
+}
+
+bool RdpDisplayControl::RequestMonitorCount(uint32_t monitorCount) {
+    const uint32_t requestedCapped =
+        std::max<uint32_t>(1u, std::min<uint32_t>(monitorCount, MonitorLayout::kMaxMonitors));
+    const uint32_t serverCap = (maxMonitors_ == 0u)
+        ? MonitorLayout::kMaxMonitors
+        : maxMonitors_;
+    const uint32_t capped = std::min<uint32_t>(requestedCapped, serverCap);
     requestedMonitorCount_ = capped;
+
+    if (capped != requestedCapped) {
+        LOGW("DisplayControl: requested %u monitor(s), capped to %u by server",
+             requestedCapped, capped);
+        ActivateMonitorCount(capped);
+        return false;
+    }
 
     if (!ctx_) {
         ActivateMonitorCount(capped);
