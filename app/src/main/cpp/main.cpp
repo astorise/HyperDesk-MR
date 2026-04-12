@@ -41,6 +41,7 @@ struct AppState {
     std::unique_ptr<FrustumCuller>        frustumCuller;
     std::unique_ptr<RdpDisplayControl>    displayControl;
     std::unique_ptr<RdpConnectionManager> rdpManager;
+    std::array<std::unique_ptr<RdpConnectionManager>, MonitorLayout::kMaxMonitors> secondaryRdpManagers;
     std::unique_ptr<RdpInputForwarder>    inputForwarder;
     std::unique_ptr<EvdevMouseReader>     evdevMouse;
 
@@ -85,6 +86,9 @@ struct AppState {
     uint64_t                               reconnectCooldownFrame = 0;
     uint64_t                               qrRetryFrame = 0;
     bool                                   splitRowsEnabled = false;
+    bool                                   qrAddConnectionMode = false;
+    uint32_t                               qrTargetMonitor = 0;
+    bool                                   dragWasHeld = false;
 };
 
 // ── Android lifecycle callback ────────────────────────────────────────────────
@@ -488,21 +492,66 @@ void android_main(android_app* app) {
                 state.statusOverlay->AddLog("[OK] Video decoders ready");
             }
 
-            state.statusOverlay->AddLog("Connecting...");
-            if (state.rdpManager->IsConnected()) {
-                state.statusOverlay->AddLog("[WARN] Replacing current RDP session");
-                state.suppressAutoReconnect = true;
-                state.rdpManager->Disconnect();
-            }
-            state.lastConnParams = params;
-            state.hasConnParams = true;
-            state.wasEverConnected = false;
-            if (!state.rdpManager->Connect(params)) {
-                state.statusOverlay->AddLog("[ERR] Failed to start RDP connection");
+            const bool addSecondary =
+                state.qrAddConnectionMode && state.rdpManager->IsConnected();
+            const uint32_t targetMonitor = state.qrTargetMonitor;
+            state.qrAddConnectionMode = false;
+            state.qrTargetMonitor = 0;
+
+            if (addSecondary) {
+                if (targetMonitor == 0 || targetMonitor >= MonitorLayout::kMaxMonitors) {
+                    state.statusOverlay->AddLog("[ERR] Invalid target monitor for QR connection");
+                    return;
+                }
+
+                state.statusOverlay->AddLog("Connecting secondary RDP session...");
+                if (state.secondaryRdpManagers[targetMonitor]) {
+                    state.secondaryRdpManagers[targetMonitor]->Disconnect();
+                    state.secondaryRdpManagers[targetMonitor].reset();
+                }
+
+                VirtualMonitor* oneMonitor[] = { state.monitorPtrs[targetMonitor] };
+                auto secondary = std::make_unique<RdpConnectionManager>(
+                    *state.displayControl,
+                    oneMonitor,
+                    1u,
+                    /*manageDisplayLayout=*/false,
+                    /*attachInputForwarder=*/false);
+                secondary->SetErrorCallback([&state, targetMonitor](uint32_t errorCode) {
+                    char errBuf[160];
+                    snprintf(errBuf, sizeof(errBuf),
+                             "[ERR] RDP monitor %u error 0x%08X",
+                             static_cast<unsigned>(targetMonitor), errorCode);
+                    state.statusOverlay->AddLog(errBuf);
+                });
+
+                if (!secondary->Connect(params)) {
+                    state.statusOverlay->AddLog("[ERR] Failed to start secondary RDP connection");
+                    return;
+                }
+
+                state.secondaryRdpManagers[targetMonitor] = std::move(secondary);
+                state.monitorLayout->SetMonitorActive(targetMonitor, true);
+                snprintf(buf, sizeof(buf), "[OK] Secondary connection on monitor %u",
+                         static_cast<unsigned>(targetMonitor));
+                state.statusOverlay->AddLog(buf);
+            } else {
+                state.statusOverlay->AddLog("Connecting...");
+                if (state.rdpManager->IsConnected()) {
+                    state.statusOverlay->AddLog("[WARN] Replacing current RDP session");
+                    state.suppressAutoReconnect = true;
+                    state.rdpManager->Disconnect();
+                }
+                state.lastConnParams = params;
+                state.hasConnParams = true;
+                state.wasEverConnected = false;
+                if (!state.rdpManager->Connect(params)) {
+                    state.statusOverlay->AddLog("[ERR] Failed to start RDP connection");
+                    state.suppressAutoReconnect = false;
+                    return;
+                }
                 state.suppressAutoReconnect = false;
-                return;
             }
-            state.suppressAutoReconnect = false;
 
             // Retry evdev mouse if it wasn't found at startup.
             if (state.evdevMouse && !state.evdevMouse->IsRunning()) {
@@ -559,7 +608,32 @@ void android_main(android_app* app) {
         const uint32_t capped =
             std::max<uint32_t>(1, std::min<uint32_t>(requestedCount, MonitorLayout::kMaxMonitors));
 
+        for (uint32_t i = capped; i < MonitorLayout::kMaxMonitors; ++i) {
+            if (state.secondaryRdpManagers[i]) {
+                state.secondaryRdpManagers[i]->Disconnect();
+                state.secondaryRdpManagers[i].reset();
+            }
+        }
+
         return state.displayControl->RequestMonitorCount(capped);
+    };
+
+    auto chooseSecondaryTargetMonitor = [&state]() -> uint32_t {
+        // Prefer right-side expansion first.
+        static constexpr uint32_t preferredOrder[] = {2u, 3u, 1u};
+        for (uint32_t idx : preferredOrder) {
+            if (idx >= MonitorLayout::kMaxMonitors) {
+                continue;
+            }
+            if (state.monitorLayout->IsMonitorActive(idx)) {
+                continue;
+            }
+            if (state.secondaryRdpManagers[idx] && state.secondaryRdpManagers[idx]->IsConnected()) {
+                continue;
+            }
+            return idx;
+        }
+        return 0u;
     };
 
     // ── Main loop ─────────────────────────────────────────────────────────────
@@ -700,34 +774,45 @@ void android_main(android_app* app) {
                         break;
                     }
                     case ImGuiToolbar::BtnDrag: {
-                        XrPosef headPose{};
-                        bool hasHeadPose = false;
-                        {
-                            std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
-                            if (state.latestHeadPoseValid) {
-                                headPose = state.latestHeadPose;
-                                hasHeadPose = true;
-                            }
-                        }
-
-                        if (hasHeadPose) {
-                            state.monitorLayout->AnchorPrimaryToHeadPose(headPose);
-                            state.statusOverlay->AddLog("[OK] Screen wall moved in front of you");
-                            state.xrContext->TriggerHapticPulse(0.6f, 120000000);
-                        } else {
-                            state.statusOverlay->AddLog("[WARN] Head pose unavailable");
-                        }
+                        state.statusOverlay->AddLog("[OK] Hold drag button and move mouse to reposition");
                         break;
                     }
                     case ImGuiToolbar::BtnQrCode: {
                         if (state.qrScanner->IsRunning()) {
                             state.statusOverlay->AddLog("[WARN] QR scanner already active");
+                        } else if (state.rdpManager->IsConnected()) {
+                            const uint32_t targetMonitor = chooseSecondaryTargetMonitor();
+                            if (targetMonitor == 0u) {
+                                state.statusOverlay->AddLog("[WARN] No free screen for a new RDP connection");
+                                break;
+                            }
+                            state.qrAddConnectionMode = true;
+                            state.qrTargetMonitor = targetMonitor;
+                            if (state.qrScanner->Start()) {
+                                char msg[128];
+                                snprintf(msg, sizeof(msg),
+                                         "[OK] QR scanner started (new connection on monitor %u)",
+                                         static_cast<unsigned>(targetMonitor));
+                                state.statusOverlay->AddLog(msg);
+                                state.statusOverlay->AddLog("Scan QR to add an RDP connection");
+                                state.qrRetryFrame = frameCount + kQrRestartCooldownFrames;
+                                state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                            } else {
+                                state.qrAddConnectionMode = false;
+                                state.qrTargetMonitor = 0;
+                                state.statusOverlay->AddLog("[ERR] Unable to start QR scanner");
+                                state.qrRetryFrame = frameCount + kQrRestartCooldownFrames;
+                            }
                         } else if (state.qrScanner->Start()) {
+                            state.qrAddConnectionMode = false;
+                            state.qrTargetMonitor = 0;
                             state.statusOverlay->AddLog("[OK] QR scanner started");
                             state.statusOverlay->AddLog("Scan QR to connect RDP");
                             state.qrRetryFrame = frameCount + kQrRestartCooldownFrames;
                             state.xrContext->TriggerHapticPulse(0.5f, 100000000);
                         } else {
+                            state.qrAddConnectionMode = false;
+                            state.qrTargetMonitor = 0;
                             state.statusOverlay->AddLog("[ERR] Unable to start QR scanner");
                             state.qrRetryFrame = frameCount + kQrRestartCooldownFrames;
                         }
@@ -766,6 +851,31 @@ void android_main(android_app* app) {
                     default:
                         break;
                 }
+            }
+
+            if (state.inputForwarder && state.imguiToolbar->IsDragHeld()) {
+                if (!state.dragWasHeld) {
+                    state.dragWasHeld = true;
+                    state.inputForwarder->ResetMotionAccumulators();
+                    state.statusOverlay->AddLog("[OK] Drag active");
+                }
+
+                int32_t dx = 0;
+                int32_t dy = 0;
+                state.inputForwarder->ConsumeCursorDelta(dx, dy);
+                const int32_t wheelSteps = state.inputForwarder->ConsumeWheelSteps();
+
+                constexpr float kDragMetersPerPixel = 0.0015f;
+                constexpr float kZoomMetersPerWheelStep = 0.10f;
+                if (dx != 0 || dy != 0 || wheelSteps != 0) {
+                    state.monitorLayout->NudgeAnchor(
+                        static_cast<float>(dx) * kDragMetersPerPixel,
+                        static_cast<float>(-dy) * kDragMetersPerPixel,
+                        static_cast<float>(wheelSteps) * kZoomMetersPerWheelStep);
+                }
+            } else if (state.dragWasHeld) {
+                state.dragWasHeld = false;
+                state.statusOverlay->AddLog("[OK] Drag released");
             }
         }
 
@@ -815,6 +925,12 @@ void android_main(android_app* app) {
     // ── Teardown ──────────────────────────────────────────────────────────────
     if (state.evdevMouse) state.evdevMouse->Stop();
     if (state.qrScanner) state.qrScanner->Stop();
+    for (auto& mgr : state.secondaryRdpManagers) {
+        if (mgr) {
+            mgr->Disconnect();
+            mgr.reset();
+        }
+    }
     state.rdpManager->Disconnect();
     state.passthrough->Pause();
 

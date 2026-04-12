@@ -57,6 +57,7 @@ public:
     static constexpr uint32_t kTexHeight = 128;
 
     bool IsReady() const { return ready_; }
+    bool IsDragHeld() const { return dragHeld_.load(); }
 
 private:
     struct ButtonTexture {
@@ -97,7 +98,8 @@ private:
     bool       leftDown_    = false;
 
     // Click tracking — latched until polled by the app.
-    std::atomic<int> lastClicked_{-1};
+    std::atomic<int>  lastClicked_{-1};
+    std::atomic<bool> dragHeld_{false};
 
     // Helpers.
     bool LoadButtonTexture(int idx, AAssetManager* mgr, const char* path);

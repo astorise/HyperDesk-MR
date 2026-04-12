@@ -594,6 +594,7 @@ void ImGuiToolbar::RenderToImage(uint32_t imageIndex) {
     // Layout 7 buttons in a horizontal row, centered vertically.
     const float btnSize = 96.0f;
     const ImVec2 imgSize(btnSize, btnSize);
+    bool dragHeld = false;
     for (int i = 0; i < kButtonCount; ++i) {
         ImGui::PushID(i);
         const auto& bt = buttons_[i];
@@ -608,9 +609,13 @@ void ImGuiToolbar::RenderToImage(uint32_t imageIndex) {
             lastClicked_.store(i);
             LOGI("ImGuiToolbar: button %d clicked", i);
         }
+        if (i == BtnDrag && ImGui::IsItemActive()) {
+            dragHeld = true;
+        }
         ImGui::PopID();
         if (i + 1 < kButtonCount) ImGui::SameLine();
     }
+    dragHeld_.store(dragHeld);
 
     ImGui::End();
     ImGui::Render();

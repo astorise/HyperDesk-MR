@@ -154,7 +154,7 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     switch (monitorIdx) {
         case 1:  monitorYaw =  kDecagonStep; break;
         case 2:  monitorYaw = -kDecagonStep; break;
-        case 3:  monitorYaw =  2.0f * kDecagonStep; break;
+        case 3:  monitorYaw = -2.0f * kDecagonStep; break;
         default: monitorYaw =  0.0f;         break;
     }
 

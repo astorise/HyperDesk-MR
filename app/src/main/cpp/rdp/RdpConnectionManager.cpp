@@ -63,9 +63,13 @@ static void ScreenLog(const char* fmt, ...) {
 
 RdpConnectionManager::RdpConnectionManager(RdpDisplayControl& displayControl,
                                              VirtualMonitor* const monitors[],
-                                             uint32_t monitorCount)
+                                             uint32_t monitorCount,
+                                             bool manageDisplayLayout,
+                                             bool attachInputForwarder)
     : displayControl_(displayControl),
-      monitorCount_(std::min(monitorCount, kMaxMonitors)) {
+      monitorCount_(std::min(monitorCount, kMaxMonitors)),
+      manageDisplayLayout_(manageDisplayLayout),
+      attachInputForwarder_(attachInputForwarder) {
     uint32_t count = std::min(monitorCount, kMaxMonitors);
     for (uint32_t i = 0; i < count; ++i) monitors_[i] = monitors[i];
     std::fill(std::begin(surfaceIds_), std::end(surfaceIds_), UINT32_MAX);
@@ -175,7 +179,8 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     // Accept self-signed RDP certificates without user prompt.
     freerdp_settings_set_bool(settings, FreeRDP_IgnoreCertificate, TRUE);
 
-    // Start with 3 monitors; DisplayControl can dynamically grow to 4.
+    // Start with 3 monitors for the primary session.
+    // Secondary sessions (single-screen) keep their requested count.
     freerdp_settings_set_bool(settings, FreeRDP_UseMultimon, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_ForceMultimon, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_HasMonitorAttributes, TRUE);
@@ -183,7 +188,10 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  kMonitorWidthPx);
     freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, kMonitorHeightPx);
 
-    const uint32_t numMon = std::min<uint32_t>(kInitialMonitorCount, kMaxMonitors);
+    const uint32_t requestedMonitors = manageDisplayLayout_
+        ? kInitialMonitorCount
+        : std::max<uint32_t>(1u, monitorCount_);
+    const uint32_t numMon = std::min<uint32_t>(requestedMonitors, kMaxMonitors);
     freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, numMon);
     freerdp_settings_set_uint32(settings, FreeRDP_MonitorDefArraySize, numMon);
 
@@ -192,7 +200,7 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     if (monArray) {
         for (uint32_t i = 0; i < numMon; ++i) {
             monArray[i] = {};
-            monArray[i].x          = DesktopLeftForMonitor(i);
+            monArray[i].x          = (numMon == 1) ? 0 : DesktopLeftForMonitor(i);
             monArray[i].y          = 0;
             monArray[i].width      = kMonitorWidthPx;
             monArray[i].height     = kMonitorHeightPx;
@@ -354,7 +362,7 @@ BOOL RdpConnectionManager::OnPostConnect(freerdp* instance) {
     ScreenLog("[OK] GDI initialized");
 
     auto* ctx = reinterpret_cast<HyperDeskRdpContext*>(instance->context);
-    if (ctx && ctx->self && ctx->self->inputForwarder_) {
+    if (ctx && ctx->self && ctx->self->attachInputForwarder_ && ctx->self->inputForwarder_) {
         ctx->self->inputForwarder_->Attach(instance);
         // Initial desktop size before display-control layout updates are applied.
         ctx->self->inputForwarder_->SetDesktopSize(
@@ -389,10 +397,12 @@ void RdpConnectionManager::OnChannelsConnected(void* context,
     ScreenLog("[OK] Channel: %s", e->name);
 
     if (strcmp(e->name, DISP_DVC_CHANNEL_NAME) == 0) {
-        ctx->disp = static_cast<DispClientContext*>(e->pInterface);
-        if (ctx->disp) {
-            ScreenLog("[OK] Display control ready");
-            self->displayControl_.Attach(ctx->disp);
+        if (self->manageDisplayLayout_) {
+            ctx->disp = static_cast<DispClientContext*>(e->pInterface);
+            if (ctx->disp) {
+                ScreenLog("[OK] Display control ready");
+                self->displayControl_.Attach(ctx->disp);
+            }
         }
     } else if (strcmp(e->name, "rdpsnd") == 0) {
         ScreenLog("[OK] Audio (rdpsnd) channel ready");
@@ -583,7 +593,7 @@ UINT RdpConnectionManager::OnGfxResetGraphics(RdpgfxClientContext* gfx,
     ScreenLog("[OK] ResetGraphics %ux%u monitors=%u",
               pdu->width, pdu->height, pdu->monitorCount);
 
-    if (!self->context_ || !self->context_->disp) {
+    if (self->manageDisplayLayout_ && (!self->context_ || !self->context_->disp)) {
         const uint32_t fallbackCount =
             std::max<uint32_t>(1u, std::min<uint32_t>(pdu->monitorCount, self->monitorCount_));
         ScreenLog("[WARN] disp channel missing, fallback=%u monitor(s)", fallbackCount);
@@ -617,7 +627,9 @@ UINT RdpConnectionManager::OnGfxSurfaceToOutput(RdpgfxClientContext* gfx,
     }
 
     // Use outputOriginX to map the surface to the correct VR monitor.
-    uint32_t monitorIdx = MonitorFromDesktopOriginX(pdu->outputOriginX);
+    uint32_t monitorIdx = (self->monitorCount_ <= 1)
+        ? 0u
+        : MonitorFromDesktopOriginX(pdu->outputOriginX);
 
     // Find the slot for this surfaceId and reassign its monitor.
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
@@ -651,7 +663,9 @@ UINT RdpConnectionManager::OnGfxSurfaceToScaledOutput(
     }
 
     // Same desktop-position-based mapping as OnGfxSurfaceToOutput.
-    uint32_t monitorIdx = MonitorFromDesktopOriginX(pdu->outputOriginX);
+    uint32_t monitorIdx = (self->monitorCount_ <= 1)
+        ? 0u
+        : MonitorFromDesktopOriginX(pdu->outputOriginX);
 
     for (uint32_t i = 0; i < kMaxMonitors; ++i) {
         if (self->surfaceIds_[i] == pdu->surfaceId) {

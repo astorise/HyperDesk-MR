@@ -14,6 +14,13 @@ rdpInput* RdpInputForwarder::GetInput() const {
     return inst->context->input;
 }
 
+bool RdpInputForwarder::IsCursorInToolbarBandLocked(int32_t x, int32_t y) const {
+    const int32_t bandTop = static_cast<int32_t>(desktopH_) + kToolbarBandY0;
+    const int32_t bandBottom = bandTop + kToolbarBandHeight;
+    return (y >= bandTop) && (y < bandBottom) &&
+           (x >= kToolbarBandX0) && (x < kToolbarBandX1);
+}
+
 bool RdpInputForwarder::GetToolbarCursor(float& u, float& v) const {
     int32_t x, y;
     {
@@ -21,13 +28,36 @@ bool RdpInputForwarder::GetToolbarCursor(float& u, float& v) const {
         x = cursorX_;
         y = cursorY_;
     }
-    if (y < static_cast<int32_t>(desktopH_)) return false;
-    if (x < kToolbarBandX0 || x >= kToolbarBandX1) return false;
+    if (!IsCursorInToolbarBandLocked(x, y)) return false;
+
+    const int32_t bandTop = static_cast<int32_t>(desktopH_) + kToolbarBandY0;
     u = static_cast<float>(x - kToolbarBandX0) /
         static_cast<float>(kToolbarBandX1 - kToolbarBandX0);
-    v = static_cast<float>(y - static_cast<int32_t>(desktopH_)) /
+    v = static_cast<float>(y - bandTop) /
         static_cast<float>(kToolbarBandHeight);
     return true;
+}
+
+void RdpInputForwarder::ConsumeCursorDelta(int32_t& dx, int32_t& dy) {
+    std::lock_guard<std::mutex> lock(motionMutex_);
+    dx = accumulatedDx_;
+    dy = accumulatedDy_;
+    accumulatedDx_ = 0;
+    accumulatedDy_ = 0;
+}
+
+int32_t RdpInputForwarder::ConsumeWheelSteps() {
+    std::lock_guard<std::mutex> lock(motionMutex_);
+    const int32_t steps = accumulatedWheelSteps_;
+    accumulatedWheelSteps_ = 0;
+    return steps;
+}
+
+void RdpInputForwarder::ResetMotionAccumulators() {
+    std::lock_guard<std::mutex> lock(motionMutex_);
+    accumulatedDx_ = 0;
+    accumulatedDy_ = 0;
+    accumulatedWheelSteps_ = 0;
 }
 
 // ── public entry point ───────────────────────────────────────────────────────
@@ -95,12 +125,21 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
     {
         std::lock_guard<std::mutex> lock(cursorMutex_);
         if (prevRawX_ >= 0.0f && prevRawY_ >= 0.0f) {
-            const float dx = (rawX - prevRawX_) * kMouseSensitivity;
-            const float dy = (rawY - prevRawY_) * kMouseSensitivity;
-            cursorX_ = std::clamp(cursorX_ + static_cast<int32_t>(dx),
+            const int32_t dxi =
+                static_cast<int32_t>((rawX - prevRawX_) * kMouseSensitivity);
+            const int32_t dyi =
+                static_cast<int32_t>((rawY - prevRawY_) * kMouseSensitivity);
+            cursorX_ = std::clamp(cursorX_ + dxi,
                                   0, static_cast<int32_t>(desktopW_ - 1));
-            cursorY_ = std::clamp(cursorY_ + static_cast<int32_t>(dy),
-                                  0, static_cast<int32_t>(desktopH_) + kToolbarBandHeight - 1);
+            cursorY_ = std::clamp(
+                cursorY_ + dyi,
+                0,
+                static_cast<int32_t>(desktopH_) + kToolbarBandY0 + kToolbarBandHeight - 1);
+            {
+                std::lock_guard<std::mutex> motionLock(motionMutex_);
+                accumulatedDx_ += dxi;
+                accumulatedDy_ += dyi;
+            }
         }
         prevRawX_ = rawX;
         prevRawY_ = rawY;
@@ -108,8 +147,7 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
         x = static_cast<uint16_t>(cursorX_);
         y = static_cast<uint16_t>(std::min<int32_t>(cursorY_,
                                                     static_cast<int32_t>(desktopH_) - 1));
-        inToolbar = (cursorY_ >= static_cast<int32_t>(desktopH_)) &&
-                    (cursorX_ >= kToolbarBandX0) && (cursorX_ < kToolbarBandX1);
+        inToolbar = IsCursorInToolbarBandLocked(cursorX_, cursorY_);
     }
 
     switch (action) {
@@ -164,6 +202,10 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
             const float vscroll = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_VSCROLL, 0);
             const float hscroll = AMotionEvent_getAxisValue(event, AMOTION_EVENT_AXIS_HSCROLL, 0);
             if (std::fabs(vscroll) > 0.01f) {
+                {
+                    std::lock_guard<std::mutex> motionLock(motionMutex_);
+                    accumulatedWheelSteps_ += (vscroll > 0.0f) ? 1 : -1;
+                }
                 uint16_t flags = PTR_FLAGS_WHEEL;
                 int clicks = static_cast<int>(vscroll * 120.0f);
                 if (clicks < 0) {
@@ -171,7 +213,9 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
                     clicks = -clicks;
                 }
                 flags |= static_cast<uint16_t>(std::min(clicks, 0xFF));
-                freerdp_input_send_mouse_event(input, flags, x, y);
+                if (!inToolbar) {
+                    freerdp_input_send_mouse_event(input, flags, x, y);
+                }
             }
             if (std::fabs(hscroll) > 0.01f) {
                 uint16_t flags = PTR_FLAGS_HWHEEL;
@@ -181,7 +225,9 @@ bool RdpInputForwarder::HandleMouseEvent(AInputEvent* event) {
                     clicks = -clicks;
                 }
                 flags |= static_cast<uint16_t>(std::min(clicks, 0xFF));
-                freerdp_input_send_mouse_event(input, flags, x, y);
+                if (!inToolbar) {
+                    freerdp_input_send_mouse_event(input, flags, x, y);
+                }
             }
             break;
         }
@@ -213,13 +259,19 @@ void RdpInputForwarder::SendMouseMove(int32_t dx, int32_t dy) {
     {
         std::lock_guard<std::mutex> lock(cursorMutex_);
         cursorX_ = std::clamp(cursorX_ + dx, 0, static_cast<int32_t>(desktopW_ - 1));
-        cursorY_ = std::clamp(cursorY_ + dy, 0,
-                              static_cast<int32_t>(desktopH_) + kToolbarBandHeight - 1);
+        cursorY_ = std::clamp(
+            cursorY_ + dy,
+            0,
+            static_cast<int32_t>(desktopH_) + kToolbarBandY0 + kToolbarBandHeight - 1);
         x = static_cast<uint16_t>(cursorX_);
         y = static_cast<uint16_t>(std::min<int32_t>(cursorY_,
                                                     static_cast<int32_t>(desktopH_) - 1));
-        inToolbar = (cursorY_ >= static_cast<int32_t>(desktopH_)) &&
-                    (cursorX_ >= kToolbarBandX0) && (cursorX_ < kToolbarBandX1);
+        inToolbar = IsCursorInToolbarBandLocked(cursorX_, cursorY_);
+    }
+    {
+        std::lock_guard<std::mutex> motionLock(motionMutex_);
+        accumulatedDx_ += dx;
+        accumulatedDy_ += dy;
     }
     if (!inToolbar) {
         freerdp_input_send_mouse_event(input, PTR_FLAGS_MOVE, x, y);
@@ -237,8 +289,7 @@ void RdpInputForwarder::SendMouseButton(uint16_t flags) {
         x = static_cast<uint16_t>(cursorX_);
         y = static_cast<uint16_t>(std::min<int32_t>(cursorY_,
                                                     static_cast<int32_t>(desktopH_) - 1));
-        inToolbar = (cursorY_ >= static_cast<int32_t>(desktopH_)) &&
-                    (cursorX_ >= kToolbarBandX0) && (cursorX_ < kToolbarBandX1);
+        inToolbar = IsCursorInToolbarBandLocked(cursorX_, cursorY_);
     }
     // Track left-button state for ImGui injection.
     if (flags & PTR_FLAGS_BUTTON1) {
@@ -270,7 +321,18 @@ void RdpInputForwarder::SendMouseWheel(int32_t clicks) {
         magnitude = -magnitude;
     }
     flags |= static_cast<uint16_t>(std::min(magnitude, 0xFF));
-    freerdp_input_send_mouse_event(input, flags, x, y);
+    bool inToolbar = false;
+    {
+        std::lock_guard<std::mutex> lock(cursorMutex_);
+        inToolbar = IsCursorInToolbarBandLocked(cursorX_, cursorY_);
+    }
+    {
+        std::lock_guard<std::mutex> motionLock(motionMutex_);
+        accumulatedWheelSteps_ += (clicks >= 0) ? 1 : -1;
+    }
+    if (!inToolbar) {
+        freerdp_input_send_mouse_event(input, flags, x, y);
+    }
 }
 
 // ── Android keycode → RDP scancode mapping ───────────────────────────────────

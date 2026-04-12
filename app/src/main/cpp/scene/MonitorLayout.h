@@ -48,6 +48,8 @@ public:
     // Mark the first N monitors as active and the rest inactive.
     void SetActiveCount(uint32_t count);
     uint32_t GetActiveCount() const { return activeCount_; }
+    void SetMonitorActive(uint32_t index, bool active);
+    bool IsMonitorActive(uint32_t index) const;
 
     // Toggle visual split mode:
     // - false: one horizontal row (default)
@@ -55,16 +57,24 @@ public:
     void SetSplitRows(bool enabled);
     bool IsSplitRows() const { return splitRows_; }
 
+    // Move the anchored wall in local wall space.
+    // rightMeters: +right / -left
+    // upMeters: +up / -down
+    // towardViewerMeters: +toward viewer / -away from viewer
+    void NudgeAnchor(float rightMeters, float upMeters, float towardViewerMeters);
+
     // Mark all monitors as active (called after layout PDU is sent).
     void SetAllActive();
 
 private:
     void ApplyPrimaryAnchor();
+    void RefreshActiveFlagsFromMask();
 
     std::array<MonitorDescriptor, kMaxMonitors> monitors_{};
     XrVector3f                                  primaryAnchorPosition_{};
     XrQuaternionf                               primaryAnchorOrientation_{0.0f, 0.0f, 0.0f, 1.0f};
     bool                                        hasPrimaryAnchor_ = false;
     bool                                        splitRows_ = false;
+    uint32_t                                    activeMask_ = 0;
     uint32_t                                    activeCount_ = 0;
 };

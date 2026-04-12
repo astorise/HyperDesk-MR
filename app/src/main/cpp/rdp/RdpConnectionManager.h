@@ -42,7 +42,9 @@ public:
 
     // monitors: array of kMaxMonitors VirtualMonitor* pointers (may contain nulls).
     RdpConnectionManager(RdpDisplayControl& displayControl,
-                         VirtualMonitor* const monitors[], uint32_t monitorCount);
+                         VirtualMonitor* const monitors[], uint32_t monitorCount,
+                         bool manageDisplayLayout = true,
+                         bool attachInputForwarder = true);
     ~RdpConnectionManager();
 
     // Callback invoked on the RDP thread when connection fails or disconnects.
@@ -152,6 +154,8 @@ private:
     bool softwareFallbackActive_ = false;
     bool softwareFramePending_ = false;
     bool softwareFallbackLogged_ = false;
+    bool manageDisplayLayout_ = true;
+    bool attachInputForwarder_ = true;
 
     void PushSoftwareFallbackFrame(RdpgfxClientContext* gfx);
 

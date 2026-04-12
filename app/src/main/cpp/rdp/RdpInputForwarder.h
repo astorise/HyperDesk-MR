@@ -24,12 +24,13 @@ public:
         cursorY_ = std::clamp<int32_t>(540, 0, static_cast<int32_t>(desktopH_ - 1));
     }
 
-    // Toolbar band: a virtual region below the desktop where mouse events are
-    // routed to the ImGui toolbar instead of RDP.  Vertical extent is in
-    // virtual cursor pixels (same units as desktopH_).
-    static constexpr int32_t kToolbarBandHeight = 220;
-    static constexpr int32_t kToolbarBandX0     = 1920;
-    static constexpr int32_t kToolbarBandX1     = 3840;
+    // Toolbar band: tuned to match ImGuiToolbar quad size/offset under monitor 0.
+    // Horizontal: central half of monitor 0 (to avoid edge drift).
+    // Vertical: starts below desktop by an offset (y0), then a compact hit height.
+    static constexpr int32_t kToolbarBandX0     = 2400;
+    static constexpr int32_t kToolbarBandX1     = 3360;
+    static constexpr int32_t kToolbarBandY0     = 52;
+    static constexpr int32_t kToolbarBandHeight = 120;
 
     // Returns true if the cursor is currently inside the toolbar band, and
     // sets u/v to its normalized position within the band.
@@ -61,6 +62,15 @@ public:
         y = cursorY_;
     }
 
+    // Consume accumulated cursor deltas since the previous call.
+    void ConsumeCursorDelta(int32_t& dx, int32_t& dy);
+
+    // Consume accumulated wheel steps (+up / -down).
+    int32_t ConsumeWheelSteps();
+
+    // Reset all accumulated motion/scroll deltas.
+    void ResetMotionAccumulators();
+
 private:
     bool HandleKeyEvent(AInputEvent* event);
     bool HandleMouseEvent(AInputEvent* event);
@@ -73,11 +83,16 @@ private:
     uint32_t desktopH_ = 1080;
 
     // Internal absolute cursor position (updated by relative deltas).
-    // Y is allowed to extend up to desktopH_ + kToolbarBandHeight - 1 so the
+    // Y is allowed to extend into the toolbar band below desktopH_ so the
     // cursor can enter the toolbar band below the central monitor.
     mutable std::mutex cursorMutex_;
     int32_t cursorX_ = 2880;  // center of 5760
     int32_t cursorY_ = 540;
+
+    std::mutex motionMutex_;
+    int32_t accumulatedDx_ = 0;
+    int32_t accumulatedDy_ = 0;
+    int32_t accumulatedWheelSteps_ = 0;
 
     // Latched left-button state for ImGui injection.
     std::atomic<bool> leftDown_{false};
@@ -93,4 +108,6 @@ private:
     // desktop is large (5760x1080 or 7680x1080). Scale deltas so full mouse sweep
     // covers the entire desktop.
     static constexpr float kMouseSensitivity = 4.5f;
+
+    bool IsCursorInToolbarBandLocked(int32_t x, int32_t y) const;
 };

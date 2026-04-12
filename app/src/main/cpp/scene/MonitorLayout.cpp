@@ -3,6 +3,7 @@
 #include "../util/Logger.h"
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 
 namespace {
@@ -79,12 +80,19 @@ XrQuaternionf YawQuat(float yaw) {
 // Monitor 0 = center (0°), 1 = left (+36°), 2 = right (-36°), 3 = far-left (+72°).
 // Positive yaw rotates the screen's front face to the right (toward center
 // for the left screen), keeping all panels facing the viewer at the origin.
-float MonitorYaw(uint32_t index) {
+float MonitorYaw(uint32_t index, bool splitRows) {
+    if (splitRows) {
+        // In split mode, add screens in vertical pairs:
+        // 0(top),1(bottom), then 2(top),3(bottom) on the next column.
+        const uint32_t column = index / 2;
+        return -static_cast<float>(column) * kDecagonStep;
+    }
+
     switch (index) {
-        case 1:  return  kDecagonStep;  // left
-        case 2:  return -kDecagonStep;  // right
-        case 3:  return  2.0f * kDecagonStep;  // far-left
-        default: return  0.0f;          // center
+        case 1:  return  kDecagonStep;       // left
+        case 2:  return -kDecagonStep;       // right
+        case 3:  return -2.0f * kDecagonStep;  // far-right
+        default: return  0.0f;               // center
     }
 }
 
@@ -95,16 +103,8 @@ XrVector3f CanonicalPosition(uint32_t index, bool splitRows) {
         return {0.0f, 0.0f, 0.0f};
     }
 
-    switch (index) {
-        case 0:  // primary monitor: top row
-            return {0.0f, +kSplitRowOffsetY, 0.0f};
-        case 1:  // second row
-        case 2:  // second row
-        case 3:  // second row
-            return {0.0f, -kSplitRowOffsetY, 0.0f};
-        default:
-            return {0.0f, 0.0f, 0.0f};
-    }
+    const bool topRow = (index % 2u) == 0u;
+    return {0.0f, topRow ? +kSplitRowOffsetY : -kSplitRowOffsetY, 0.0f};
 }
 
 XrVector3f HeadForward(const XrQuaternionf& q) {
@@ -133,7 +133,7 @@ void MonitorLayout::BuildDefaultLayout() {
         MonitorDescriptor& m = monitors_[i];
         m.index = i;
 
-        const float yaw = MonitorYaw(i);
+        const float yaw = MonitorYaw(i, splitRows_);
         m.worldPose.position = CanonicalPosition(i, splitRows_);
         m.worldPose.orientation = YawQuat(yaw);
         m.sizeMeters = {1.92f, 1.08f};
@@ -198,6 +198,10 @@ void MonitorLayout::BindSurface(uint32_t monitorIndex, uint32_t rdpSurfaceId) {
 
 void MonitorLayout::SetActiveCount(uint32_t count) {
     const uint32_t capped = std::min(count, kMaxMonitors);
+    activeMask_ = 0;
+    for (uint32_t i = 0; i < capped; ++i) {
+        activeMask_ |= (1u << i);
+    }
     activeCount_ = capped;
 
     BuildDefaultLayout();
@@ -206,9 +210,7 @@ void MonitorLayout::SetActiveCount(uint32_t count) {
         monitors_[0].worldPose.position = {0.0f, 0.0f, kDepth};
     }
 
-    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
-        monitors_[i].active = (i < capped);
-    }
+    RefreshActiveFlagsFromMask();
     const XrVector3f& primaryPos = monitors_[0].worldPose.position;
     LOGI("MonitorLayout: %u monitor(s) active primary=(%.2f, %.2f, %.2f) anchored=%d",
          capped,
@@ -218,6 +220,28 @@ void MonitorLayout::SetActiveCount(uint32_t count) {
          hasPrimaryAnchor_ ? 1 : 0);
 }
 
+void MonitorLayout::SetMonitorActive(uint32_t index, bool active) {
+    if (index >= kMaxMonitors) {
+        return;
+    }
+
+    if (active) {
+        activeMask_ |= (1u << index);
+    } else {
+        activeMask_ &= ~(1u << index);
+    }
+
+    activeCount_ = static_cast<uint32_t>(std::popcount(activeMask_));
+    monitors_[index].active = active;
+}
+
+bool MonitorLayout::IsMonitorActive(uint32_t index) const {
+    if (index >= kMaxMonitors) {
+        return false;
+    }
+    return (activeMask_ & (1u << index)) != 0;
+}
+
 void MonitorLayout::SetSplitRows(bool enabled) {
     if (splitRows_ == enabled) {
         return;
@@ -225,9 +249,7 @@ void MonitorLayout::SetSplitRows(bool enabled) {
 
     splitRows_ = enabled;
     BuildDefaultLayout();
-    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
-        monitors_[i].active = (i < activeCount_);
-    }
+    RefreshActiveFlagsFromMask();
 
     LOGI("MonitorLayout: split rows %s", splitRows_ ? "enabled" : "disabled");
 }
@@ -253,10 +275,36 @@ void MonitorLayout::ApplyPrimaryAnchor() {
             RotateVector(primaryAnchorOrientation_, relative));
 
         // Orientation: anchor yaw * per-monitor yaw on the decagonal arc.
-        const XrQuaternionf perMonitorYaw = YawQuat(MonitorYaw(i));
+        const XrQuaternionf perMonitorYaw = YawQuat(MonitorYaw(i, splitRows_));
         monitor.worldPose.orientation = QuatMul(primaryAnchorOrientation_, perMonitorYaw);
 
         // Forward normal: from screen toward viewer (rotated).
         monitor.forwardNormal = RotateVector(monitor.worldPose.orientation, {0.0f, 0.0f, 1.0f});
+    }
+}
+
+void MonitorLayout::NudgeAnchor(float rightMeters, float upMeters, float towardViewerMeters) {
+    if (!hasPrimaryAnchor_) {
+        primaryAnchorPosition_ = monitors_[0].worldPose.position;
+        primaryAnchorOrientation_ = monitors_[0].worldPose.orientation;
+        hasPrimaryAnchor_ = true;
+    }
+
+    const XrVector3f right = RotateVector(primaryAnchorOrientation_, {1.0f, 0.0f, 0.0f});
+    const XrVector3f up = RotateVector(primaryAnchorOrientation_, {0.0f, 1.0f, 0.0f});
+    const XrVector3f towardViewer = RotateVector(primaryAnchorOrientation_, {0.0f, 0.0f, 1.0f});
+
+    primaryAnchorPosition_ = Add(
+        primaryAnchorPosition_,
+        Add(
+            Scale(right, rightMeters),
+            Add(Scale(up, upMeters), Scale(towardViewer, towardViewerMeters))));
+
+    ApplyPrimaryAnchor();
+}
+
+void MonitorLayout::RefreshActiveFlagsFromMask() {
+    for (uint32_t i = 0; i < kMaxMonitors; ++i) {
+        monitors_[i].active = (activeMask_ & (1u << i)) != 0;
     }
 }
