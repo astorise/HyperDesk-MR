@@ -60,10 +60,9 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
             continue;
         }
 
-        // Cylinder layer: each screen spans one decagon step (36°) edge-to-edge.
+        // Cylinder layer: each screen spans one configured arc step.
         constexpr float kCylinderRadius = 1.6f;
-        constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;  // 36°
-        const float centralAngle = kDecagonStep;
+        const float centralAngle = MonitorLayout::kAngularStepRadians;
         const float aspectRatio  = 16.0f / 9.0f;
 
         const XrCompositionLayerCylinderKHR* layer = monitors_[i]->GetCompositionLayer(
@@ -93,11 +92,10 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
             }
 
             constexpr float kCylinderRadius = 1.6f;
-            constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;
             constexpr float kAspectRatio = 16.0f / 9.0f;
             if (auto* tbLayer = imguiToolbar_->GetCompositionLayer(
                     ctx_.GetWorldSpace(), mon0.worldPose,
-                    kCylinderRadius, kDecagonStep, kAspectRatio)) {
+                    kCylinderRadius, MonitorLayout::kAngularStepRadians, kAspectRatio)) {
                 layerPtrs_[layerCount++] =
                     reinterpret_cast<const XrCompositionLayerBaseHeader*>(tbLayer);
             }
@@ -114,12 +112,12 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
         const MonitorDescriptor& mon0 = layout_.GetMonitor(0);
         if (mon0.active) {
             constexpr float kCylinderRadius = 1.6f;
-            constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;
             constexpr float kAspectRatio = 16.0f / 9.0f;
 
             if (auto* cursorLayer = cursorOverlay_->GetCompositionLayer(
                     ctx_.GetWorldSpace(), mon0.worldPose,
-                    kCylinderRadius, kDecagonStep, kAspectRatio)) {
+                    kCylinderRadius, MonitorLayout::kAngularStepRadians, kAspectRatio,
+                    layout_.IsSplitRows())) {
                 layerPtrs_[layerCount++] =
                     reinterpret_cast<const XrCompositionLayerBaseHeader*>(cursorLayer);
             }

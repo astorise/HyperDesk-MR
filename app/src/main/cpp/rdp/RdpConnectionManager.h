@@ -57,8 +57,10 @@ public:
     uint32_t GetInitialMonitorCount() const { return initialMonitorCount_; }
 
     bool Connect(const ConnectionParams& params);
+    bool ConnectLast();
     void Disconnect();
     bool IsConnected() const { return connected_.load(); }
+    bool HasLastConnectParams() const { return hasLastConnectParams_; }
 
     // Last FreeRDP error code captured on connection failure (0 = no error).
     uint32_t GetLastError() const { return lastError_.load(); }
@@ -159,6 +161,8 @@ private:
     bool manageDisplayLayout_ = true;
     bool attachInputForwarder_ = true;
     uint32_t initialMonitorCount_ = 1u;
+    ConnectionParams lastConnectParams_{};
+    bool hasLastConnectParams_ = false;
 
     void PushSoftwareFallbackFrame(RdpgfxClientContext* gfx);
 

@@ -29,7 +29,8 @@ public:
         const XrPosef& cylinderCenter,
         float cylinderRadius,
         float centralAngle,
-        float aspectRatio);
+        float aspectRatio,
+        bool splitRows);
 
 private:
     // Cursor icon size in meters.
@@ -49,7 +50,7 @@ private:
     uint32_t texHeight_ = 0;
 
     std::mutex posMutex_;
-    int32_t    desktopX_ = 2880;  // center of 5760
+    int32_t    desktopX_ = 2880;  // center of primary monitor (x in desktop space)
     int32_t    desktopY_ = 540;
 
     bool LoadPngFromAssets(AAssetManager* mgr, const char* path);

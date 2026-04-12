@@ -100,6 +100,10 @@ int ImGuiToolbar::PollClickedButton() {
     return lastClicked_.exchange(-1);
 }
 
+bool ImGuiToolbar::PollDragDoubleClicked() {
+    return dragDoubleClicked_.exchange(false);
+}
+
 const XrCompositionLayerQuad* ImGuiToolbar::GetCompositionLayer(
         XrSpace worldSpace,
         const XrPosef& cylinderCenter,
@@ -608,6 +612,12 @@ void ImGuiToolbar::RenderToImage(uint32_t imageIndex) {
         if (clicked) {
             lastClicked_.store(i);
             LOGI("ImGuiToolbar: button %d clicked", i);
+        }
+        if (i == BtnDrag &&
+            ImGui::IsItemHovered() &&
+            ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            dragDoubleClicked_.store(true);
+            LOGI("ImGuiToolbar: drag button double-clicked");
         }
         if (i == BtnDrag && ImGui::IsItemActive()) {
             dragHeld = true;

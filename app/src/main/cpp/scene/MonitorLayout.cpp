@@ -9,11 +9,10 @@
 namespace {
 
 // ── Decagon geometry ─────────────────────────────────────────────────────────
-// Up to 4 screens arranged on consecutive sides of a regular 10-sided polygon.
-// Angle between adjacent screen centers as seen from the decagon center.
-constexpr float kDecagonStep = 2.0f * static_cast<float>(M_PI) / 10.0f;  // 36°
+// Horizontal spacing between adjacent monitor columns.
+constexpr float kArcStep = MonitorLayout::kAngularStepRadians;
 // Distance from the viewer to the screen plane (meters).
-constexpr float kDecagonRadius = 2.6f;
+constexpr float kArcRadius = 2.6f;
 constexpr float kSplitRowOffsetY = 0.60f;
 
 XrVector3f Add(XrVector3f a, XrVector3f b) {
@@ -76,24 +75,27 @@ XrQuaternionf YawQuat(float yaw) {
     return {0.0f, std::sin(half), 0.0f, std::cos(half)};
 }
 
-// Yaw angle for each monitor on the decagonal arc.
+// Yaw angle for each monitor column on the arc.
 // Monitor 0 = center (0°), 1 = left (+36°), 2 = right (-36°), 3 = far-left (+72°).
 // Positive yaw rotates the screen's front face to the right (toward center
 // for the left screen), keeping all panels facing the viewer at the origin.
 float MonitorYaw(uint32_t index, bool splitRows) {
     if (splitRows) {
         // In split mode, add screens in vertical pairs:
-        // 0(top),1(bottom), then 2(top),3(bottom) on the next column.
+        // 0(top),1(bottom), then 2(top),3(bottom), ...
+        // Columns advance continuously to the right.
         const uint32_t column = index / 2;
-        return -static_cast<float>(column) * kDecagonStep;
+        return -static_cast<float>(column) * kArcStep;
     }
 
-    switch (index) {
-        case 1:  return  kDecagonStep;       // left
-        case 2:  return -kDecagonStep;       // right
-        case 3:  return -2.0f * kDecagonStep;  // far-right
-        default: return  0.0f;               // center
+    if (index == 0) {
+        return 0.0f;
     }
+
+    const uint32_t ring = (index + 1u) / 2u;
+    const float magnitude = static_cast<float>(ring) * kArcStep;
+    const bool isLeft = (index & 1u) == 1u;
+    return isLeft ? magnitude : -magnitude;
 }
 
 // For cylinder layers, horizontal spread is controlled by per-monitor yaw.
@@ -137,15 +139,15 @@ void MonitorLayout::BuildDefaultLayout() {
         m.worldPose.position = CanonicalPosition(i, splitRows_);
         m.worldPose.orientation = YawQuat(yaw);
         m.sizeMeters = {1.92f, 1.08f};
-        // Normal points from screen toward the decagon center (the viewer).
+        // Normal points from screen toward the arc center (the viewer).
         m.forwardNormal = {std::sin(yaw), 0.0f, std::cos(yaw)};
     }
 
     ApplyPrimaryAnchor();
 
-    LOGI("MonitorLayout: decagon arc (%u panels max, R=%.2f, step=%.1f°)",
+    LOGI("MonitorLayout: arc layout (%u panels max, R=%.2f, step=%.1f°)",
          kMaxMonitors,
-         kDecagonRadius, kDecagonStep * 180.0f / static_cast<float>(M_PI));
+         kArcRadius, kArcStep * 180.0f / static_cast<float>(M_PI));
 }
 
 void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
@@ -274,7 +276,7 @@ void MonitorLayout::ApplyPrimaryAnchor() {
             primaryAnchorPosition_,
             RotateVector(primaryAnchorOrientation_, relative));
 
-        // Orientation: anchor yaw * per-monitor yaw on the decagonal arc.
+        // Orientation: anchor yaw * per-monitor yaw on the arc.
         const XrQuaternionf perMonitorYaw = YawQuat(MonitorYaw(i, splitRows_));
         monitor.worldPose.orientation = QuatMul(primaryAnchorOrientation_, perMonitorYaw);
 
@@ -300,6 +302,39 @@ void MonitorLayout::NudgeAnchor(float rightMeters, float upMeters, float towardV
             Scale(right, rightMeters),
             Add(Scale(up, upMeters), Scale(towardViewer, towardViewerMeters))));
 
+    ApplyPrimaryAnchor();
+}
+
+void MonitorLayout::RotateAnchorYaw(float yawRadians) {
+    if (!hasPrimaryAnchor_) {
+        primaryAnchorPosition_ = monitors_[0].worldPose.position;
+        primaryAnchorOrientation_ = monitors_[0].worldPose.orientation;
+        hasPrimaryAnchor_ = true;
+    }
+
+    if (std::fabs(yawRadians) <= 1e-6f) {
+        return;
+    }
+
+    primaryAnchorOrientation_ = QuatMul(YawQuat(yawRadians), primaryAnchorOrientation_);
+    ApplyPrimaryAnchor();
+}
+
+void MonitorLayout::RotateAnchorYawAroundPivot(float yawRadians, const XrVector3f& pivotPosition) {
+    if (!hasPrimaryAnchor_) {
+        primaryAnchorPosition_ = monitors_[0].worldPose.position;
+        primaryAnchorOrientation_ = monitors_[0].worldPose.orientation;
+        hasPrimaryAnchor_ = true;
+    }
+
+    if (std::fabs(yawRadians) <= 1e-6f) {
+        return;
+    }
+
+    const XrQuaternionf yawQuat = YawQuat(yawRadians);
+    const XrVector3f relative = Sub(primaryAnchorPosition_, pivotPosition);
+    primaryAnchorPosition_ = Add(pivotPosition, RotateVector(yawQuat, relative));
+    primaryAnchorOrientation_ = QuatMul(yawQuat, primaryAnchorOrientation_);
     ApplyPrimaryAnchor();
 }
 

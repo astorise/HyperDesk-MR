@@ -19,9 +19,11 @@ struct MonitorDescriptor {
 
 class MonitorLayout {
 public:
-    static constexpr uint32_t kMaxMonitors = 4;
-    static constexpr uint32_t kGridCols = 4;
+    static constexpr uint32_t kMaxMonitors = 16;
+    static constexpr uint32_t kGridCols = 16;
     static constexpr uint32_t kGridRows = 1;
+    // Horizontal angular spacing between adjacent monitor columns.
+    static constexpr float kAngularStepRadians = 0.31415927f;  // 18°
 
     // Physical spacing between monitor centers (meters).
     static constexpr float kHSpacing = 2.0f;   // 1.92m screen + 0.08m gap
@@ -32,8 +34,8 @@ public:
 
     MonitorLayout();
 
-    // Compute a 4-column x 4-row grid centered on (0, 0, kDepth).
-    // Row 0 is topmost. Column 0 is leftmost.
+    // Recompute monitor poses on the curved wall from the current anchor,
+    // split mode, and angular spacing.
     void BuildDefaultLayout();
 
     // Anchor monitor[0] to the current headset heading while keeping the wall upright.
@@ -62,6 +64,11 @@ public:
     // upMeters: +up / -down
     // towardViewerMeters: +toward viewer / -away from viewer
     void NudgeAnchor(float rightMeters, float upMeters, float towardViewerMeters);
+    // Rotate the anchored wall around the vertical axis.
+    void RotateAnchorYaw(float yawRadians);
+    // Rotate around a world-space pivot (typically headset position) so the
+    // curved wall keeps its orbit around the viewer.
+    void RotateAnchorYawAroundPivot(float yawRadians, const XrVector3f& pivotPosition);
 
     // Mark all monitors as active (called after layout PDU is sent).
     void SetAllActive();

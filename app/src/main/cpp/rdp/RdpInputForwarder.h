@@ -20,15 +20,16 @@ public:
         desktopW_ = std::max<uint32_t>(1u, w);
         desktopH_ = std::max<uint32_t>(1u, h);
         // Reset cursor to center of primary monitor.
-        cursorX_ = std::clamp<int32_t>(1920 + 960, 0, static_cast<int32_t>(desktopW_ - 1));
+        const int32_t primaryLeft = (desktopW_ <= 1920u) ? 0 : 1920;
+        cursorX_ = std::clamp<int32_t>(primaryLeft + 960, 0, static_cast<int32_t>(desktopW_ - 1));
         cursorY_ = std::clamp<int32_t>(540, 0, static_cast<int32_t>(desktopH_ - 1));
     }
 
-    // Toolbar band: tuned to match ImGuiToolbar quad size/offset under monitor 0.
-    // Horizontal: central half of monitor 0 (to avoid edge drift).
+    // Toolbar band: tuned to match ImGuiToolbar quad size/offset under primary monitor.
+    // Horizontal: central half of the primary monitor (to avoid edge drift).
     // Vertical: starts below desktop by an offset (y0), then a compact hit height.
-    static constexpr int32_t kToolbarBandX0     = 2400;
-    static constexpr int32_t kToolbarBandX1     = 3360;
+    static constexpr int32_t kToolbarBandLocalX0 = 480;
+    static constexpr int32_t kToolbarBandLocalX1 = 1440;
     static constexpr int32_t kToolbarBandY0     = 52;
     static constexpr int32_t kToolbarBandHeight = 120;
 
@@ -86,7 +87,7 @@ private:
     // Y is allowed to extend into the toolbar band below desktopH_ so the
     // cursor can enter the toolbar band below the central monitor.
     mutable std::mutex cursorMutex_;
-    int32_t cursorX_ = 2880;  // center of 5760
+    int32_t cursorX_ = 2880;  // center of primary monitor in default 3-screen layout
     int32_t cursorY_ = 540;
 
     std::mutex motionMutex_;
@@ -105,7 +106,7 @@ private:
     int32_t prevButtonState_ = 0;
 
     // Sensitivity multiplier: Android window is small (~1280x800) but
-    // desktop is large (5760x1080 or 7680x1080). Scale deltas so full mouse sweep
+    // desktop is large (5760x1080 up to 30720x1080). Scale deltas so full mouse sweep
     // covers the entire desktop.
     static constexpr float kMouseSensitivity = 4.5f;
 

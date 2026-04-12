@@ -19,6 +19,8 @@ void RdpDisplayControl::SetMonitorConfigAppliedCallback(std::function<void(uint3
 void RdpDisplayControl::Attach(DispClientContext* ctx) {
     ctx_         = ctx;
     ctx_->custom = this;  // store back-pointer for the static callback
+    // New channel attachment after reconnect: clear stale server cap until CAPS arrives.
+    maxMonitors_ = 0;
 
     // Register the CAPS callback.
     ctx_->DisplayControlCaps = OnDisplayControlCaps;
@@ -132,16 +134,16 @@ RdpDisplayControl::BuildLayoutPDU(uint32_t monitorCount) const {
     entries.reserve(capped);
 
     // Desktop X order:
-    //   monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840, monitor 3 @ x=5760.
+    //   monitor 1 @ x=0, monitor 0 @ x=1920, then monitor i @ x=i*1920 for i>=2.
     // Monitor 0 remains primary.
     for (uint32_t i = 0; i < capped; ++i) {
-        INT32 left;
-        switch (i) {
-            case 0:  left = 1920;  break;  // center
-            case 1:  left = 0;     break;  // left
-            case 2:  left = 3840;  break;  // right
-            case 3:  left = 5760;  break;  // far-left in VR arc
-            default: left = static_cast<INT32>(i * 1920); break;
+        INT32 left = static_cast<INT32>(i * 1920);
+        if (capped == 1u) {
+            left = 0;
+        } else if (i == 0u) {
+            left = 1920;
+        } else if (i == 1u) {
+            left = 0;
         }
 
         DISPLAY_CONTROL_MONITOR_LAYOUT m{};

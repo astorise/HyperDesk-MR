@@ -89,6 +89,8 @@ struct AppState {
     bool                                   qrAddConnectionMode = false;
     uint32_t                               qrTargetMonitor = 0;
     bool                                   dragWasHeld = false;
+    bool                                   dragYawPivotValid = false;
+    XrVector3f                             dragYawPivot{0.0f, 0.0f, 0.0f};
 };
 
 // ── Android lifecycle callback ────────────────────────────────────────────────
@@ -344,8 +346,8 @@ void android_main(android_app* app) {
     state.displayControl->SetMonitorConfigAppliedCallback(
         [&state](uint32_t monitorCount) {
             if (state.inputForwarder) {
-                // Keep legacy 3-monitor desktop mapping by default; extend to 4 when enabled.
-                const uint32_t desktopMonitors = (monitorCount >= 4u) ? 4u : 3u;
+                const uint32_t desktopMonitors =
+                    std::max<uint32_t>(1u, std::min<uint32_t>(monitorCount, MonitorLayout::kMaxMonitors));
                 state.inputForwarder->SetDesktopSize(desktopMonitors * 1920u, 1080u);
                 LOGI("Updated RDP input desktop to %u x 1080 (%u monitor layout)",
                      desktopMonitors * 1920u, monitorCount);
@@ -619,7 +621,9 @@ void android_main(android_app* app) {
         }
 
         // Grow by reconnecting with a larger initial monitor declaration.
-        if (capped > currentCount && state.rdpManager->IsConnected() && state.hasConnParams) {
+        if (capped > currentCount
+            && state.rdpManager->IsConnected()
+            && state.rdpManager->HasLastConnectParams()) {
             const uint32_t previousInitial = state.rdpManager->GetInitialMonitorCount();
 
             state.displayControl->SetRequestedMonitorCount(capped);
@@ -628,7 +632,7 @@ void android_main(android_app* app) {
 
             state.suppressAutoReconnect = true;
             state.rdpManager->Disconnect();
-            if (!state.rdpManager->Connect(state.lastConnParams)) {
+            if (!state.rdpManager->ConnectLast()) {
                 state.rdpManager->SetInitialMonitorCount(previousInitial);
                 state.displayControl->SetRequestedMonitorCount(previousInitial);
                 state.suppressAutoReconnect = false;
@@ -659,6 +663,15 @@ void android_main(android_app* app) {
             if (idx >= MonitorLayout::kMaxMonitors) {
                 continue;
             }
+            if (state.monitorLayout->IsMonitorActive(idx)) {
+                continue;
+            }
+            if (state.secondaryRdpManagers[idx] && state.secondaryRdpManagers[idx]->IsConnected()) {
+                continue;
+            }
+            return idx;
+        }
+        for (uint32_t idx = 4u; idx < MonitorLayout::kMaxMonitors; ++idx) {
             if (state.monitorLayout->IsMonitorActive(idx)) {
                 continue;
             }
@@ -769,6 +782,26 @@ void android_main(android_app* app) {
 
         // ── Track connection state for auto-reconnect ──────────────────────
         if (state.imguiToolbar && state.imguiToolbar->IsReady()) {
+            if (state.imguiToolbar->PollDragDoubleClicked()) {
+                XrPosef headPose{};
+                bool haveHeadPose = false;
+                {
+                    std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                    if (state.latestHeadPoseValid) {
+                        headPose = state.latestHeadPose;
+                        haveHeadPose = true;
+                    }
+                }
+
+                if (haveHeadPose) {
+                    state.monitorLayout->AnchorPrimaryToHeadPose(headPose);
+                    state.statusOverlay->AddLog("[OK] View reset from headset orientation");
+                    state.xrContext->TriggerHapticPulse(0.5f, 100000000);
+                } else {
+                    state.statusOverlay->AddLog("[WARN] Head pose unavailable for reset");
+                }
+            }
+
             const int clicked = state.imguiToolbar->PollClickedButton();
             if (clicked >= 0) {
                 const uint32_t frontMonitor = getFrontMonitorIndex();
@@ -808,7 +841,8 @@ void android_main(android_app* app) {
                         break;
                     }
                     case ImGuiToolbar::BtnDrag: {
-                        state.statusOverlay->AddLog("[OK] Hold drag button and move mouse to reposition");
+                        state.statusOverlay->AddLog("[OK] Hold drag and move mouse to rotate/reposition");
+                        state.statusOverlay->AddLog("[OK] Double-click drag to reset from headset orientation");
                         break;
                     }
                     case ImGuiToolbar::BtnQrCode: {
@@ -891,6 +925,19 @@ void android_main(android_app* app) {
                 if (!state.dragWasHeld) {
                     state.dragWasHeld = true;
                     state.inputForwarder->ResetMotionAccumulators();
+                    XrPosef headPose{};
+                    bool haveHeadPose = false;
+                    {
+                        std::lock_guard<std::mutex> lock(state.latestHeadPoseMutex);
+                        if (state.latestHeadPoseValid) {
+                            headPose = state.latestHeadPose;
+                            haveHeadPose = true;
+                        }
+                    }
+                    state.dragYawPivotValid = haveHeadPose;
+                    if (haveHeadPose) {
+                        state.dragYawPivot = headPose.position;
+                    }
                     state.statusOverlay->AddLog("[OK] Drag active");
                 }
 
@@ -899,16 +946,27 @@ void android_main(android_app* app) {
                 state.inputForwarder->ConsumeCursorDelta(dx, dy);
                 const int32_t wheelSteps = state.inputForwarder->ConsumeWheelSteps();
 
-                constexpr float kDragMetersPerPixel = 0.0015f;
+                constexpr float kDragYawPerPixel = 0.0015f;
+                constexpr float kDragVerticalMetersPerPixel = 0.0015f;
                 constexpr float kZoomMetersPerWheelStep = 0.10f;
                 if (dx != 0 || dy != 0 || wheelSteps != 0) {
+                    if (dx != 0) {
+                        const float yawDelta = static_cast<float>(-dx) * kDragYawPerPixel;
+                        if (state.dragYawPivotValid) {
+                            state.monitorLayout->RotateAnchorYawAroundPivot(
+                                yawDelta, state.dragYawPivot);
+                        } else {
+                            state.monitorLayout->RotateAnchorYaw(yawDelta);
+                        }
+                    }
                     state.monitorLayout->NudgeAnchor(
-                        static_cast<float>(dx) * kDragMetersPerPixel,
-                        static_cast<float>(-dy) * kDragMetersPerPixel,
+                        0.0f,
+                        static_cast<float>(-dy) * kDragVerticalMetersPerPixel,
                         static_cast<float>(wheelSteps) * kZoomMetersPerWheelStep);
                 }
             } else if (state.dragWasHeld) {
                 state.dragWasHeld = false;
+                state.dragYawPivotValid = false;
                 state.statusOverlay->AddLog("[OK] Drag released");
             }
         }

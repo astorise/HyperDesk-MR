@@ -51,6 +51,7 @@ public:
     // Returns the index of the most recently clicked button, or -1 if none.
     // Clears the latched value on read.
     int PollClickedButton();
+    bool PollDragDoubleClicked();
 
     // Toolbar quad dimensions in pixels (used for cursor mapping).
     static constexpr uint32_t kTexWidth  = 1024;
@@ -100,6 +101,7 @@ private:
     // Click tracking — latched until polled by the app.
     std::atomic<int>  lastClicked_{-1};
     std::atomic<bool> dragHeld_{false};
+    std::atomic<bool> dragDoubleClicked_{false};
 
     // Helpers.
     bool LoadButtonTexture(int idx, AAssetManager* mgr, const char* path);

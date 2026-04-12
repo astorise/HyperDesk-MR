@@ -15,10 +15,13 @@ rdpInput* RdpInputForwarder::GetInput() const {
 }
 
 bool RdpInputForwarder::IsCursorInToolbarBandLocked(int32_t x, int32_t y) const {
+    const int32_t primaryLeft = (desktopW_ <= 1920u) ? 0 : 1920;
+    const int32_t bandLeft = primaryLeft + kToolbarBandLocalX0;
+    const int32_t bandRight = primaryLeft + kToolbarBandLocalX1;
     const int32_t bandTop = static_cast<int32_t>(desktopH_) + kToolbarBandY0;
     const int32_t bandBottom = bandTop + kToolbarBandHeight;
     return (y >= bandTop) && (y < bandBottom) &&
-           (x >= kToolbarBandX0) && (x < kToolbarBandX1);
+           (x >= bandLeft) && (x < bandRight);
 }
 
 bool RdpInputForwarder::GetToolbarCursor(float& u, float& v) const {
@@ -30,9 +33,12 @@ bool RdpInputForwarder::GetToolbarCursor(float& u, float& v) const {
     }
     if (!IsCursorInToolbarBandLocked(x, y)) return false;
 
+    const int32_t primaryLeft = (desktopW_ <= 1920u) ? 0 : 1920;
+    const int32_t bandLeft = primaryLeft + kToolbarBandLocalX0;
+    const int32_t bandWidth = kToolbarBandLocalX1 - kToolbarBandLocalX0;
     const int32_t bandTop = static_cast<int32_t>(desktopH_) + kToolbarBandY0;
-    u = static_cast<float>(x - kToolbarBandX0) /
-        static_cast<float>(kToolbarBandX1 - kToolbarBandX0);
+    u = static_cast<float>(x - bandLeft) /
+        static_cast<float>(bandWidth);
     v = static_cast<float>(y - bandTop) /
         static_cast<float>(kToolbarBandHeight);
     return true;

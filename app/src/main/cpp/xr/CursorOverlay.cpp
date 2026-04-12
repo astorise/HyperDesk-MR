@@ -1,10 +1,12 @@
 #include "CursorOverlay.h"
 #include "XrContext.h"
+#include "../scene/MonitorLayout.h"
 #include "../util/Logger.h"
 #include "../util/Check.h"
 
 #include <android/imagedecoder.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -117,7 +119,8 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         const XrPosef& cylinderCenter,
         float cylinderRadius,
         float centralAngle,
-        float aspectRatio) {
+        float aspectRatio,
+        bool splitRows) {
 
     if (texWidth_ == 0 || texHeight_ == 0) return nullptr;
 
@@ -129,33 +132,34 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     }
 
     // Desktop layout:
-    //   monitor 2 @ x=[0,1920), monitor 0 @ x=[1920,3840),
-    //   monitor 1 @ x=[3840,5760), monitor 3 @ x=[5760,7680).
-    int monitorIdx;
-    float localU;
-    if (dx < 1920) {
-        monitorIdx = 2;  // right
-        localU = static_cast<float>(dx) / 1920.0f;
-    } else if (dx < 3840) {
-        monitorIdx = 0;  // center
-        localU = static_cast<float>(dx - 1920) / 1920.0f;
-    } else if (dx < 5760) {
-        monitorIdx = 1;  // left
-        localU = static_cast<float>(dx - 3840) / 1920.0f;
+    //   monitor 1 @ x=[0,1920), monitor 0 @ x=[1920,3840),
+    //   monitor i @ x=[i*1920,(i+1)*1920) for i>=2.
+    const int32_t clampedX =
+        std::max<int32_t>(0, std::min<int32_t>(dx, static_cast<int32_t>(1920 * MonitorLayout::kMaxMonitors - 1)));
+    const int32_t slot = clampedX / 1920;
+    uint32_t monitorIdx = 0;
+    if (slot == 0) {
+        monitorIdx = 1;
+    } else if (slot == 1) {
+        monitorIdx = 0;
     } else {
-        monitorIdx = 3;  // far-left
-        localU = static_cast<float>(dx - 5760) / 1920.0f;
+        monitorIdx = static_cast<uint32_t>(std::min<int32_t>(slot, static_cast<int32_t>(MonitorLayout::kMaxMonitors - 1)));
     }
+    const float localU = static_cast<float>(clampedX - slot * 1920) / 1920.0f;
     float localV = static_cast<float>(dy) / 1080.0f;
 
     // Yaw angles matching MonitorLayout::MonitorYaw.
-    constexpr float kDecagonStep = 2.0f * 3.14159265f / 10.0f;
+    constexpr float kArcStep = MonitorLayout::kAngularStepRadians;
     float monitorYaw;
-    switch (monitorIdx) {
-        case 1:  monitorYaw =  kDecagonStep; break;
-        case 2:  monitorYaw = -kDecagonStep; break;
-        case 3:  monitorYaw = -2.0f * kDecagonStep; break;
-        default: monitorYaw =  0.0f;         break;
+    if (splitRows) {
+        monitorYaw = -static_cast<float>(monitorIdx / 2u) * kArcStep;
+    } else if (monitorIdx == 0u) {
+        monitorYaw = 0.0f;
+    } else {
+        const uint32_t ring = (monitorIdx + 1u) / 2u;
+        const float magnitude = static_cast<float>(ring) * kArcStep;
+        const bool isLeft = (monitorIdx & 1u) == 1u;
+        monitorYaw = isLeft ? magnitude : -magnitude;
     }
 
     float cursorAngle = monitorYaw + (localU - 0.5f) * centralAngle;
@@ -168,6 +172,11 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
 
     float cylinderHeight = cylinderRadius * centralAngle / aspectRatio;
     float cy = (0.5f - localV) * cylinderHeight;
+    if (splitRows) {
+        constexpr float kSplitRowOffsetY = 0.60f;
+        const bool topRow = (monitorIdx % 2u) == 0u;
+        cy += topRow ? +kSplitRowOffsetY : -kSplitRowOffsetY;
+    }
 
     // Rotate by cylinder center orientation.
     const auto& q = cylinderCenter.orientation;

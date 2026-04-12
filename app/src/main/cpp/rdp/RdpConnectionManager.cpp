@@ -20,29 +20,32 @@ constexpr uint32_t kMonitorWidthPx = 1920;
 constexpr uint32_t kMonitorHeightPx = 1080;
 
 // Desktop X order:
-//   monitor 1 @ x=0, monitor 0 @ x=1920, monitor 2 @ x=3840, monitor 3 @ x=5760.
+//   monitor 1 @ x=0, monitor 0 @ x=1920, then monitor i @ x=i*1920 for i>=2.
 int32_t DesktopLeftForMonitor(uint32_t monitorIdx) {
-    switch (monitorIdx) {
-        case 0: return 1920;  // center (primary)
-        case 1: return 0;     // left
-        case 2: return 3840;  // right
-        case 3: return 5760;  // far-left in VR arc
-        default:
-            return static_cast<int32_t>(monitorIdx * kMonitorWidthPx);
+    if (monitorIdx == 0u) {
+        return 1920;  // center (primary)
     }
+    if (monitorIdx == 1u) {
+        return 0;     // left
+    }
+    return static_cast<int32_t>(monitorIdx * kMonitorWidthPx);
 }
 
 uint32_t MonitorFromDesktopOriginX(int32_t x) {
-    if (x < 1920) {
-        return 2;
-    }
-    if (x < 3840) {
+    if (x < 0) {
         return 0;
     }
-    if (x < 5760) {
+    const int32_t slot = x / static_cast<int32_t>(kMonitorWidthPx);
+    if (slot == 0) {
         return 1;
     }
-    return 3;
+    if (slot == 1) {
+        return 0;
+    }
+    if (slot >= static_cast<int32_t>(MonitorLayout::kMaxMonitors)) {
+        return MonitorLayout::kMaxMonitors - 1u;
+    }
+    return static_cast<uint32_t>(slot);
 }
 
 }  // namespace
@@ -105,6 +108,9 @@ bool RdpConnectionManager::Connect(const ConnectionParams& params) {
         return false;
     }
 
+    lastConnectParams_ = params;
+    hasLastConnectParams_ = true;
+
     stopFlag_.store(false);
     connected_.store(false);
     lastError_.store(0);
@@ -153,6 +159,14 @@ bool RdpConnectionManager::Connect(const ConnectionParams& params) {
     return true;
 }
 
+bool RdpConnectionManager::ConnectLast() {
+    if (!hasLastConnectParams_) {
+        LOGW("RDP: ConnectLast called without cached connection parameters");
+        return false;
+    }
+    return Connect(lastConnectParams_);
+}
+
 void RdpConnectionManager::SetupSettings(rdpSettings* settings, const ConnectionParams& params) {
     freerdp_settings_set_string(settings, FreeRDP_ServerHostname, params.hostname.c_str());
     freerdp_settings_set_uint32(settings, FreeRDP_ServerPort,     params.port);
@@ -196,13 +210,16 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     freerdp_settings_set_bool(settings, FreeRDP_ForceMultimon, TRUE);
     freerdp_settings_set_bool(settings, FreeRDP_HasMonitorAttributes, TRUE);
 
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth,  kMonitorWidthPx);
-    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, kMonitorHeightPx);
-
     const uint32_t requestedMonitors = manageDisplayLayout_
         ? initialMonitorCount_
         : std::max<uint32_t>(1u, monitorCount_);
     const uint32_t numMon = std::min<uint32_t>(requestedMonitors, kMaxMonitors);
+    const uint32_t desktopWidth = (numMon <= 1u)
+        ? kMonitorWidthPx
+        : (numMon * kMonitorWidthPx);
+
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopWidth, desktopWidth);
+    freerdp_settings_set_uint32(settings, FreeRDP_DesktopHeight, kMonitorHeightPx);
     freerdp_settings_set_uint32(settings, FreeRDP_MonitorCount, numMon);
     freerdp_settings_set_uint32(settings, FreeRDP_MonitorDefArraySize, numMon);
 
@@ -223,8 +240,8 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
             monArray[i].attributes.deviceScaleFactor  = 100;
         }
 
-        LOGI("RDP: %u monitors declared at connect (0@1920 primary, 1@0, 2@3840, 3@5760)",
-             numMon);
+        LOGI("RDP: %u monitors declared at connect (desktop=%ux%u, primary at x=1920)",
+             numMon, desktopWidth, kMonitorHeightPx);
     } else {
         LOGE("RDP: failed to get MonitorDefArray pointer");
     }
@@ -765,7 +782,8 @@ void RdpConnectionManager::PushSoftwareFallbackFrame(RdpgfxClientContext* gfx) {
     for (uint32_t monitorIdx = 0; monitorIdx < kMaxMonitors; ++monitorIdx) {
         if (monitorIdx >= monitorCount_ || !monitors_[monitorIdx]) continue;
 
-        const int32_t left = DesktopLeftForMonitor(monitorIdx);
+        const int32_t left =
+            (monitorCount_ <= 1u) ? 0 : DesktopLeftForMonitor(monitorIdx);
         if (left < 0) continue;
         const uint32_t offsetX = static_cast<uint32_t>(left);
         if (offsetX + monW > gdiW) continue;  // surface too narrow for this monitor slot.
