@@ -12,7 +12,7 @@ namespace {
 // Horizontal spacing between adjacent monitor columns.
 constexpr float kArcStep = MonitorLayout::kAngularStepRadians;
 // Distance from the viewer to the screen plane (meters).
-constexpr float kArcRadius = 2.6f;
+constexpr float kArcRadius = 1.6f;
 constexpr float kSplitRowOffsetY = 0.60f;
 
 XrVector3f Add(XrVector3f a, XrVector3f b) {
@@ -160,8 +160,9 @@ void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
     horizontalForward = Normalize(horizontalForward, {0.0f, 0.0f, -1.0f});
 
     primaryAnchorOrientation_ = YawOnlyWallOrientation(horizontalForward);
-    // Cylinder center is 0.5m behind the viewer so screens feel further away.
-    primaryAnchorPosition_ = Add(headPose.position, Scale(horizontalForward, -0.5f));
+    // Cylinder center is at the viewer's position — screens sit on the
+    // cylinder surface at kCylinderRadius distance.
+    primaryAnchorPosition_ = headPose.position;
     hasPrimaryAnchor_ = true;
 
     BuildDefaultLayout();

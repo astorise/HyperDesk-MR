@@ -22,8 +22,8 @@ public:
     static constexpr uint32_t kMaxMonitors = 16;
     static constexpr uint32_t kGridCols = 16;
     static constexpr uint32_t kGridRows = 1;
-    // Horizontal angular spacing between adjacent monitor columns.
-    static constexpr float kAngularStepRadians = 0.31415927f;  // 18°
+    // Horizontal angular spacing between adjacent monitor columns (decagon step).
+    static constexpr float kAngularStepRadians = 0.62831853f;  // 36° = 2π/10
 
     // Physical spacing between monitor centers (meters).
     static constexpr float kHSpacing = 2.0f;   // 1.92m screen + 0.08m gap
