@@ -205,27 +205,13 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
     auto* monitors = freerdp_settings_get_pointer_writable(settings, FreeRDP_MonitorDefArray);
     auto* monArray = static_cast<rdpMonitor*>(monitors);
     if (monArray) {
-        const uint32_t primaryMonitorIdx = (numMon <= 1u) ? 0u : 1u;
-        std::vector<uint32_t> monitorOrder;
-        monitorOrder.reserve(numMon);
-        for (uint32_t i = 0; i < numMon; ++i) {
-            monitorOrder.push_back(i);
-        }
-        std::sort(monitorOrder.begin(), monitorOrder.end(),
-                  [numMon](uint32_t a, uint32_t b) {
-                      const int32_t leftA = (numMon == 1u) ? 0 : DesktopLeftForMonitor(a);
-                      const int32_t leftB = (numMon == 1u) ? 0 : DesktopLeftForMonitor(b);
-                      return leftA < leftB;
-                  });
-
         for (uint32_t slot = 0; slot < numMon; ++slot) {
-            const uint32_t monitorIdx = monitorOrder[slot];
             monArray[slot] = {};
-            monArray[slot].x          = (numMon == 1u) ? 0 : DesktopLeftForMonitor(monitorIdx);
+            monArray[slot].x          = static_cast<int32_t>(slot * kMonitorWidthPx);
             monArray[slot].y          = 0;
             monArray[slot].width      = kMonitorWidthPx;
             monArray[slot].height     = kMonitorHeightPx;
-            monArray[slot].is_primary = (monitorIdx == primaryMonitorIdx) ? 1 : 0;
+            monArray[slot].is_primary = (slot == 0u) ? 1 : 0;
             monArray[slot].attributes.physicalWidth  = 527;
             monArray[slot].attributes.physicalHeight = 296;
             monArray[slot].attributes.orientation    = ORIENTATION_LANDSCAPE;
@@ -233,10 +219,8 @@ void RdpConnectionManager::SetupSettings(rdpSettings* settings, const Connection
             monArray[slot].attributes.deviceScaleFactor  = 100;
         }
 
-        const int32_t primaryLeft =
-            (numMon <= 1u) ? 0 : DesktopLeftForMonitor(primaryMonitorIdx);
-        LOGI("RDP: %u monitors declared at connect (desktop=%ux%u, primary at x=%d)",
-             numMon, desktopWidth, kMonitorHeightPx, primaryLeft);
+        LOGI("RDP: %u monitors declared at connect (desktop=%ux%u, primary at x=0)",
+             numMon, desktopWidth, kMonitorHeightPx);
     } else {
         LOGE("RDP: failed to get MonitorDefArray pointer");
     }
@@ -777,8 +761,7 @@ void RdpConnectionManager::PushSoftwareFallbackFrame(RdpgfxClientContext* gfx) {
     for (uint32_t monitorIdx = 0; monitorIdx < kMaxMonitors; ++monitorIdx) {
         if (monitorIdx >= monitorCount_ || !monitors_[monitorIdx]) continue;
 
-        const int32_t left =
-            (monitorCount_ <= 1u) ? 0 : DesktopLeftForMonitor(monitorIdx);
+        const int32_t left = static_cast<int32_t>(monitorIdx * kMonitorWidthPx);
         if (left < 0) continue;
         const uint32_t offsetX = static_cast<uint32_t>(left);
         if (offsetX + monW > gdiW) continue;  // surface too narrow for this monitor slot.
