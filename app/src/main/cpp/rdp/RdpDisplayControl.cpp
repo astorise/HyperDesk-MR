@@ -10,17 +10,11 @@ static constexpr uint32_t kPhysWidthMm  = 527;
 static constexpr uint32_t kPhysHeightMm = 296;
 
 namespace {
-INT32 DesktopLeftForMonitor(uint32_t monitorIdx, uint32_t monitorCount) {
-    if (monitorCount <= 1u) {
-        return 0;
-    }
-    if (monitorIdx == 0u) {
-        return 1920;  // center (primary)
-    }
-    if (monitorIdx == 1u) {
-        return 0;     // left
-    }
-    return static_cast<INT32>(monitorIdx * 1920u);  // right side growth
+// Simple sequential layout: monitor i occupies desktop x = [i*1920, (i+1)*1920).
+// mon0 (primary) is always at x=0, matching Windows' requirement that the
+// primary monitor sits at the origin.
+INT32 DesktopLeftForMonitor(uint32_t monitorIdx, uint32_t /*monitorCount*/) {
+    return static_cast<INT32>(monitorIdx * 1920u);
 }
 }  // namespace
 
@@ -162,10 +156,8 @@ RdpDisplayControl::BuildLayoutPDU(uint32_t monitorCount) const {
                   return a.left < b.left;
               });
 
-    // Send entries left-to-right so monitor numbering is monotonic in the host OS.
-    // For multi-monitor sessions, make the left-most monitor primary so Windows
-    // labels become 1,2,3,... from left to right.
-    const uint32_t primaryMonitorIdx = 0u;
+    // Send entries left-to-right.  mon0 is always at x=0 and is always primary.
+    constexpr uint32_t primaryMonitorIdx = 0u;
     for (const LayoutCandidate& candidate : ordered) {
         DISPLAY_CONTROL_MONITOR_LAYOUT m{};
         m.Flags              =

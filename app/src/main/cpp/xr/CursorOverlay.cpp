@@ -131,34 +131,21 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         dy = desktopY_;
     }
 
-    // Desktop layout:
-    //   monitor 1 @ x=[0,1920), monitor 0 @ x=[1920,3840),
-    //   monitor i @ x=[i*1920,(i+1)*1920) for i>=2.
+    // Sequential desktop layout: monitor i @ x=[i*1920, (i+1)*1920).
     const int32_t clampedX =
         std::max<int32_t>(0, std::min<int32_t>(dx, static_cast<int32_t>(1920 * MonitorLayout::kMaxMonitors - 1)));
-    const int32_t slot = clampedX / 1920;
-    uint32_t monitorIdx = 0;
-    if (slot == 0) {
-        monitorIdx = 1;
-    } else if (slot == 1) {
-        monitorIdx = 0;
-    } else {
-        monitorIdx = static_cast<uint32_t>(std::min<int32_t>(slot, static_cast<int32_t>(MonitorLayout::kMaxMonitors - 1)));
-    }
-    const float localU = static_cast<float>(clampedX - slot * 1920) / 1920.0f;
+    const uint32_t monitorIdx = static_cast<uint32_t>(
+        std::min<int32_t>(clampedX / 1920, static_cast<int32_t>(MonitorLayout::kMaxMonitors - 1)));
+    const float localU = static_cast<float>(clampedX - static_cast<int32_t>(monitorIdx) * 1920) / 1920.0f;
     float localV = static_cast<float>(dy) / 1080.0f;
 
-    // Yaw angles matching MonitorLayout::MonitorYaw.
+    // Yaw angles matching MonitorLayout::MonitorYaw (sequential to the right).
     constexpr float kArcStep = MonitorLayout::kAngularStepRadians;
     float monitorYaw;
     if (splitRows) {
         monitorYaw = -static_cast<float>(monitorIdx / 2u) * kArcStep;
-    } else if (monitorIdx == 1u) {
-        monitorYaw = +kArcStep;
-    } else if (monitorIdx == 0u) {
-        monitorYaw = 0.0f;
     } else {
-        monitorYaw = -static_cast<float>(monitorIdx - 1u) * kArcStep;
+        monitorYaw = -static_cast<float>(monitorIdx) * kArcStep;
     }
 
     float cursorAngle = monitorYaw + (localU - 0.5f) * centralAngle;

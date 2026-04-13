@@ -20,33 +20,11 @@ namespace {
 constexpr uint32_t kMonitorWidthPx = 1920;
 constexpr uint32_t kMonitorHeightPx = 1080;
 
-// Desktop X order:
-//   monitor 1 @ x=0, monitor 0 @ x=1920, then monitor i @ x=i*1920 for i>=2.
-int32_t DesktopLeftForMonitor(uint32_t monitorIdx) {
-    if (monitorIdx == 0u) {
-        return 1920;  // center (primary)
-    }
-    if (monitorIdx == 1u) {
-        return 0;     // left
-    }
-    return static_cast<int32_t>(monitorIdx * kMonitorWidthPx);
-}
-
+// Simple sequential layout: monitor i occupies desktop x = [i*1920, (i+1)*1920).
 uint32_t MonitorFromDesktopOriginX(int32_t x) {
-    if (x < 0) {
-        return 0;
-    }
-    const int32_t slot = x / static_cast<int32_t>(kMonitorWidthPx);
-    if (slot == 0) {
-        return 1;
-    }
-    if (slot == 1) {
-        return 0;
-    }
-    if (slot >= static_cast<int32_t>(MonitorLayout::kMaxMonitors)) {
-        return MonitorLayout::kMaxMonitors - 1u;
-    }
-    return static_cast<uint32_t>(slot);
+    if (x < 0) return 0;
+    const uint32_t slot = static_cast<uint32_t>(x) / kMonitorWidthPx;
+    return std::min(slot, MonitorLayout::kMaxMonitors - 1u);
 }
 
 }  // namespace

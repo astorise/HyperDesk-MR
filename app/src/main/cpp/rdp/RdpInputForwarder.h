@@ -19,9 +19,8 @@ public:
     void SetDesktopSize(uint32_t w, uint32_t h) {
         desktopW_ = std::max<uint32_t>(1u, w);
         desktopH_ = std::max<uint32_t>(1u, h);
-        // Reset cursor to the center of monitor[0] (toolbar anchor monitor).
-        const int32_t toolbarAnchorLeft = (desktopW_ <= 1920u) ? 0 : 1920;
-        cursorX_ = std::clamp<int32_t>(toolbarAnchorLeft + 960, 0, static_cast<int32_t>(desktopW_ - 1));
+        // Reset cursor to the center of monitor[0] (at x=0, toolbar anchor).
+        cursorX_ = std::clamp<int32_t>(960, 0, static_cast<int32_t>(desktopW_ - 1));
         cursorY_ = std::clamp<int32_t>(540, 0, static_cast<int32_t>(desktopH_ - 1));
     }
 
@@ -87,7 +86,7 @@ private:
     // Y is allowed to extend into the toolbar band below desktopH_ so the
     // cursor can enter the toolbar band below the central monitor.
     mutable std::mutex cursorMutex_;
-    int32_t cursorX_ = 2880;  // center of primary monitor in default 3-screen layout
+    int32_t cursorX_ = 960;   // center of mon0 (at x=0)
     int32_t cursorY_ = 540;
 
     std::mutex motionMutex_;

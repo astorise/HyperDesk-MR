@@ -76,27 +76,17 @@ XrQuaternionf YawQuat(float yaw) {
 }
 
 // Yaw angle for each monitor column on the arc.
-// Single-row order (left -> right): 1, 0, 2, 3, 4, ...
-// This keeps monitor 0 centered for toolbar/input ergonomics while making
-// monitor numbering monotonic from left to right for additional screens.
+// Sequential: mon0 at center (0°), then mon1, mon2, ... extend to the right
+// (negative yaw = clockwise = visual right).  This matches the desktop X
+// layout (mon i at x = i*1920) so moving the mouse right moves the 3D
+// cursor to the right without any index remapping.
 float MonitorYaw(uint32_t index, bool splitRows) {
     if (splitRows) {
-        // In split mode, add screens in vertical pairs:
-        // 0(top),1(bottom), then 2(top),3(bottom), ...
-        // Columns advance continuously to the right.
         const uint32_t column = index / 2;
         return -static_cast<float>(column) * kArcStep;
     }
 
-    if (index == 1u) {
-        return +kArcStep;  // left of center
-    }
-    if (index == 0u) {
-        return 0.0f;
-    }
-
-    // Monitors 2..N extend to the right in increasing index order.
-    return -static_cast<float>(index - 1u) * kArcStep;
+    return -static_cast<float>(index) * kArcStep;
 }
 
 // For cylinder layers, horizontal spread is controlled by per-monitor yaw.
