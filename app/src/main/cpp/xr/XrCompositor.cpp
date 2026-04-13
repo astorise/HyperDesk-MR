@@ -60,6 +60,11 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
             continue;
         }
 
+        // Carousel: hide monitors whose center angle exceeds ±90°.
+        if (!layout_.IsMonitorInView(i)) {
+            continue;
+        }
+
         // Cylinder layer: each screen spans one configured arc step.
         constexpr float kCylinderRadius = 1.6f;
         const float centralAngle = MonitorLayout::kAngularStepRadians;
@@ -80,10 +85,11 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
     }
 
     // ImGui toolbar — render after monitors, before cursor.
+    // The toolbar stays fixed at the center of the FOV (unscrolled anchor),
+    // independent of the carousel scroll offset.
     if (imguiToolbar_ && imguiToolbar_->IsReady()) {
         const MonitorDescriptor& mon0 = layout_.GetMonitor(0);
         if (mon0.active) {
-            // Forward cursor input to ImGui (if forwarder is available).
             if (inputForwarder_) {
                 float u = 0.0f, v = 0.0f;
                 const bool inside = inputForwarder_->GetToolbarCursor(u, v);
@@ -91,10 +97,11 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
                                              inputForwarder_->IsLeftButtonDown());
             }
 
+            const XrPosef toolbarPose = layout_.GetToolbarAnchorPose();
             constexpr float kCylinderRadius = 1.6f;
             constexpr float kAspectRatio = 16.0f / 9.0f;
             if (auto* tbLayer = imguiToolbar_->GetCompositionLayer(
-                    ctx_.GetWorldSpace(), mon0.worldPose,
+                    ctx_.GetWorldSpace(), toolbarPose,
                     kCylinderRadius, MonitorLayout::kAngularStepRadians, kAspectRatio)) {
                 layerPtrs_[layerCount++] =
                     reinterpret_cast<const XrCompositionLayerBaseHeader*>(tbLayer);

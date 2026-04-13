@@ -767,6 +767,17 @@ void android_main(android_app* app) {
                 }
             }
 
+            // Update carousel scroll: smoothly slide the monitor wall when
+            // the cursor approaches the ±60° edge of the visible arc.
+            if (state.inputForwarder) {
+                int32_t cx, cy;
+                state.inputForwarder->GetCursorPosition(cx, cy);
+                const uint32_t cursorMonIdx = static_cast<uint32_t>(std::min<int32_t>(
+                    std::max<int32_t>(cx / 1920, 0),
+                    static_cast<int32_t>(MonitorLayout::kMaxMonitors - 1)));
+                state.monitorLayout->UpdateCarousel(cursorMonIdx);
+            }
+
             state.xrContext->SyncActions();
             state.compositor->RenderFrame(frameState);
         } else {

@@ -73,6 +73,22 @@ public:
     // Mark all monitors as active (called after layout PDU is sent).
     void SetAllActive();
 
+    // ── Carousel (auto-scroll when cursor nears arc edges) ──────────────
+    // Call once per frame with the monitor index under the cursor.
+    // Smoothly scrolls the wall so that monitors beyond ±90° are hidden
+    // and the cursor monitor stays within the ±60° comfort zone.
+    void UpdateCarousel(uint32_t cursorMonitorIdx);
+
+    // Returns true if the monitor's center angle (with scroll) is within ±90°.
+    bool IsMonitorInView(uint32_t index) const;
+
+    // Current scroll offset in radians (positive = wall shifted left).
+    float GetScrollYaw() const { return scrollYaw_; }
+
+    // Returns the unscrolled primary anchor pose (for the toolbar, which
+    // stays fixed at the center of the field of view).
+    XrPosef GetToolbarAnchorPose() const;
+
 private:
     void ApplyPrimaryAnchor();
     void RefreshActiveFlagsFromMask();
@@ -84,4 +100,5 @@ private:
     bool                                        splitRows_ = false;
     uint32_t                                    activeMask_ = 0;
     uint32_t                                    activeCount_ = 0;
+    float                                       scrollYaw_ = 0.0f;
 };

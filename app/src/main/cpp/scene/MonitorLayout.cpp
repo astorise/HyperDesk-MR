@@ -75,18 +75,21 @@ XrQuaternionf YawQuat(float yaw) {
     return {0.0f, std::sin(half), 0.0f, std::cos(half)};
 }
 
-// Yaw angle for each monitor column on the arc.
-// Sequential: mon0 at center (0°), then mon1, mon2, ... extend to the right
-// (negative yaw = clockwise = visual right).  This matches the desktop X
-// layout (mon i at x = i*1920) so moving the mouse right moves the 3D
-// cursor to the right without any index remapping.
-float MonitorYaw(uint32_t index, bool splitRows) {
+// Base yaw for a monitor (without scroll).
+float MonitorBaseYaw(uint32_t index, bool splitRows) {
     if (splitRows) {
         const uint32_t column = index / 2;
         return -static_cast<float>(column) * kArcStep;
     }
-
     return -static_cast<float>(index) * kArcStep;
+}
+
+// Yaw angle for each monitor column on the arc, including carousel scroll.
+// Sequential: mon0 at center (0°), then mon1, mon2, ... extend to the right
+// (negative yaw = clockwise = visual right).  scrollYaw shifts the entire
+// wall (positive = wall shifts counter-clockwise, revealing right-side monitors).
+float MonitorYaw(uint32_t index, bool splitRows, float scrollYaw) {
+    return MonitorBaseYaw(index, splitRows) + scrollYaw;
 }
 
 // For cylinder layers, horizontal spread is controlled by per-monitor yaw.
@@ -126,7 +129,7 @@ void MonitorLayout::BuildDefaultLayout() {
         MonitorDescriptor& m = monitors_[i];
         m.index = i;
 
-        const float yaw = MonitorYaw(i, splitRows_);
+        const float yaw = MonitorYaw(i, splitRows_, scrollYaw_);
         m.worldPose.position = CanonicalPosition(i, splitRows_);
         m.worldPose.orientation = YawQuat(yaw);
         m.sizeMeters = {1.92f, 1.08f};
@@ -154,6 +157,7 @@ void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
     // cylinder surface at kCylinderRadius distance.
     primaryAnchorPosition_ = headPose.position;
     hasPrimaryAnchor_ = true;
+    scrollYaw_ = 0.0f;  // Reset carousel scroll on re-anchor.
 
     BuildDefaultLayout();
 
@@ -268,8 +272,8 @@ void MonitorLayout::ApplyPrimaryAnchor() {
             primaryAnchorPosition_,
             RotateVector(primaryAnchorOrientation_, relative));
 
-        // Orientation: anchor yaw * per-monitor yaw on the arc.
-        const XrQuaternionf perMonitorYaw = YawQuat(MonitorYaw(i, splitRows_));
+        // Orientation: anchor yaw * per-monitor yaw on the arc (includes scroll).
+        const XrQuaternionf perMonitorYaw = YawQuat(MonitorYaw(i, splitRows_, scrollYaw_));
         monitor.worldPose.orientation = QuatMul(primaryAnchorOrientation_, perMonitorYaw);
 
         // Forward normal: from screen toward viewer (rotated).
@@ -328,6 +332,69 @@ void MonitorLayout::RotateAnchorYawAroundPivot(float yawRadians, const XrVector3
     primaryAnchorPosition_ = Add(pivotPosition, RotateVector(yawQuat, relative));
     primaryAnchorOrientation_ = QuatMul(yawQuat, primaryAnchorOrientation_);
     ApplyPrimaryAnchor();
+}
+
+// ── Carousel ────────────────────────────────────────────────────────────────
+
+void MonitorLayout::UpdateCarousel(uint32_t cursorMonitorIdx) {
+    if (cursorMonitorIdx >= kMaxMonitors) return;
+
+    const float baseYaw = MonitorBaseYaw(cursorMonitorIdx, splitRows_);
+    const float effectiveYaw = baseYaw + scrollYaw_;
+
+    // Comfort zone: ±60°.  When the cursor monitor's center angle exceeds
+    // this threshold the wall scrolls to bring it back to the boundary.
+    constexpr float kScrollThreshold = 1.0471975f;  // 60° in radians
+
+    float targetScroll = scrollYaw_;
+    if (effectiveYaw < -kScrollThreshold) {
+        // Cursor too far right → scroll wall left (increase scrollYaw).
+        targetScroll = -kScrollThreshold - baseYaw;
+    } else if (effectiveYaw > kScrollThreshold) {
+        // Cursor too far left → scroll wall right (decrease scrollYaw).
+        targetScroll = kScrollThreshold - baseYaw;
+    }
+
+    // Clamp: don't scroll mon0 past center (no monitors to the left of it).
+    targetScroll = std::max(0.0f, targetScroll);
+
+    const float prev = scrollYaw_;
+
+    // Smooth exponential interpolation (~0.3 s to 90 % at 72 Hz).
+    constexpr float kSmooth = 0.12f;
+    scrollYaw_ += (targetScroll - scrollYaw_) * kSmooth;
+    if (std::fabs(targetScroll - scrollYaw_) < 0.001f) {
+        scrollYaw_ = targetScroll;
+    }
+
+    if (scrollYaw_ != prev) {
+        BuildDefaultLayout();
+    }
+}
+
+bool MonitorLayout::IsMonitorInView(uint32_t index) const {
+    if (index >= kMaxMonitors) return false;
+
+    const float effectiveYaw = MonitorBaseYaw(index, splitRows_) + scrollYaw_;
+    constexpr float kMaxAngle = 1.5707963f;  // 90° in radians
+    return std::fabs(effectiveYaw) <= kMaxAngle;
+}
+
+XrPosef MonitorLayout::GetToolbarAnchorPose() const {
+    if (!hasPrimaryAnchor_) {
+        return monitors_[0].worldPose;
+    }
+
+    // Unscrolled mon0 pose: primary anchor orientation with no per-monitor yaw.
+    XrPosef pose;
+    pose.position = primaryAnchorPosition_;
+    pose.orientation = primaryAnchorOrientation_;
+
+    if (splitRows_) {
+        pose.position = Add(pose.position,
+            RotateVector(primaryAnchorOrientation_, {0.0f, kSplitRowOffsetY, 0.0f}));
+    }
+    return pose;
 }
 
 void MonitorLayout::RefreshActiveFlagsFromMask() {
