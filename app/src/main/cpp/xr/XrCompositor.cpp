@@ -12,6 +12,9 @@
 #include "../scene/VirtualMonitor.h"
 #include "../util/Logger.h"
 
+#include <algorithm>
+#include <cstdio>
+
 XrCompositor::XrCompositor(
     XrContext&                       ctx,
     XrPassthrough&                   passthrough,
@@ -116,6 +119,33 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
         int32_t cx, cy;
         inputForwarder_->GetCursorPosition(cx, cy);
         cursorOverlay_->SetPosition(cx, cy);
+
+        // Debug HUD: show live cursor/scroll info on StatusOverlay lines 6-7.
+        if (statusOverlay_) {
+            const float scrollDeg =
+                layout_.GetScrollYaw() * 180.0f / 3.14159265f;
+            const uint32_t monIdx = static_cast<uint32_t>(std::min(
+                std::max(cx, 0) / 1920,
+                static_cast<int32_t>(MonitorLayout::kMaxMonitors - 1)));
+            const float localU =
+                static_cast<float>(cx - static_cast<int32_t>(monIdx) * 1920) / 1920.0f;
+            const float monYawDeg =
+                -static_cast<float>(monIdx) * MonitorLayout::kAngularStepRadians
+                * 180.0f / 3.14159265f;
+            const float cursorAngleDeg =
+                monYawDeg + scrollDeg
+                + (localU - 0.5f) * (MonitorLayout::kAngularStepRadians
+                                     * 180.0f / 3.14159265f);
+            char buf[96];
+            std::snprintf(buf, sizeof(buf),
+                          "cur=(%d,%d) mon=%u U=%.2f",
+                          cx, cy, monIdx, localU);
+            statusOverlay_->SetStatusLine(6, buf);
+            std::snprintf(buf, sizeof(buf),
+                          "scroll=%.1f° yaw=%.1f°",
+                          scrollDeg, cursorAngleDeg);
+            statusOverlay_->SetStatusLine(7, buf);
+        }
 
         const MonitorDescriptor& mon0 = layout_.GetMonitor(0);
         if (mon0.active) {

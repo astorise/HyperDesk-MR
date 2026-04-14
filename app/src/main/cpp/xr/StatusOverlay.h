@@ -48,7 +48,7 @@ public:
     static StatusOverlay* sInstance;
 
 private:
-    static constexpr size_t kMaxStatusLines = 6;
+    static constexpr size_t kMaxStatusLines = 8;
     static constexpr int    kMaxLogLines    = 4;
 
     XrContext&   ctx_;
