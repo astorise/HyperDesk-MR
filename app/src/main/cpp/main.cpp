@@ -783,6 +783,14 @@ void android_main(android_app* app) {
                 state.monitorLayout->UpdateHeadScroll(currentHeadPose);
             }
 
+            // Keep the toolbar hit-band aligned with the scrolled wall.
+            if (state.inputForwarder) {
+                const float scrollYaw = state.monitorLayout->GetScrollYaw();
+                const int32_t toolbarOffsetX = static_cast<int32_t>(
+                    scrollYaw / MonitorLayout::kAngularStepRadians * 1920.0f);
+                state.inputForwarder->SetToolbarOffsetX(toolbarOffsetX);
+            }
+
             state.xrContext->SyncActions();
             state.compositor->RenderFrame(frameState);
         } else {

@@ -120,7 +120,8 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         float cylinderRadius,
         float centralAngle,
         float aspectRatio,
-        bool splitRows) {
+        bool splitRows,
+        float scrollYaw) {
 
     if (texWidth_ == 0 || texHeight_ == 0) return nullptr;
 
@@ -139,7 +140,8 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     const float localU = static_cast<float>(clampedX - static_cast<int32_t>(monitorIdx) * 1920) / 1920.0f;
     float localV = static_cast<float>(dy) / 1080.0f;
 
-    // Yaw angles matching MonitorLayout::MonitorYaw (sequential to the right).
+    // Yaw angles matching MonitorLayout::MonitorYaw (sequential to the right),
+    // plus the carousel scroll offset so the cursor tracks the scrolled wall.
     constexpr float kArcStep = MonitorLayout::kAngularStepRadians;
     float monitorYaw;
     if (splitRows) {
@@ -148,7 +150,7 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         monitorYaw = -static_cast<float>(monitorIdx) * kArcStep;
     }
 
-    float cursorAngle = monitorYaw + (localU - 0.5f) * centralAngle;
+    float cursorAngle = monitorYaw + scrollYaw + (localU - 0.5f) * centralAngle;
 
     // 3D position on cylinder surface, pulled 2cm toward viewer.
     constexpr float kZOffset = 0.02f;

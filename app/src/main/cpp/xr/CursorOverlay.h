@@ -24,13 +24,15 @@ public:
     void SetPosition(int32_t desktopX, int32_t desktopY);
 
     // Returns the composition layer for this frame, or nullptr if hidden.
+    // scrollYaw is the carousel scroll offset (radians) applied to monitor yaws.
     const XrCompositionLayerQuad* GetCompositionLayer(
         XrSpace worldSpace,
         const XrPosef& cylinderCenter,
         float cylinderRadius,
         float centralAngle,
         float aspectRatio,
-        bool splitRows);
+        bool splitRows,
+        float scrollYaw = 0.0f);
 
 private:
     // Cursor icon size in meters.

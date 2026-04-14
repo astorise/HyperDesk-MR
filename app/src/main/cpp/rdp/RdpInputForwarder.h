@@ -35,12 +35,16 @@ public:
     }
 
     // Toolbar band: tuned to match ImGuiToolbar quad touching the monitor bottom.
-    // Horizontal: central half of monitor[0] (toolbar anchor monitor).
+    // Horizontal: central half-monitor width, offset by toolbarOffsetX_ to
+    // follow the carousel scroll (the toolbar stays at the center of the FOV).
     // Vertical: starts just below desktop to match the toolbar seam.
-    static constexpr int32_t kToolbarBandLocalX0 = 480;
-    static constexpr int32_t kToolbarBandLocalX1 = 1440;
+    static constexpr int32_t kToolbarBandHalfWidth = 480;
     static constexpr int32_t kToolbarBandY0     = 8;
     static constexpr int32_t kToolbarBandHeight = 120;
+
+    // Set the desktop-X offset for the toolbar band center.
+    // Should be called each frame with scrollYaw / kAngularStepRadians * 1920.
+    void SetToolbarOffsetX(int32_t offsetX) { toolbarOffsetX_ = offsetX; }
 
     // Returns true if the cursor is currently inside the toolbar band, and
     // sets u/v to its normalized position within the band.
@@ -113,6 +117,9 @@ private:
 
     // Previous button state to detect which button was released.
     int32_t prevButtonState_ = 0;
+
+    // Toolbar band horizontal offset (desktop pixels) to track carousel scroll.
+    int32_t toolbarOffsetX_ = 0;
 
     // Sensitivity multiplier: Android window is small (~1280x800) but
     // desktop is large (5760x1080 up to 30720x1080). Scale deltas so full mouse sweep

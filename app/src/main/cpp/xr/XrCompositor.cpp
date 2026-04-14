@@ -110,21 +110,24 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
     }
 
     // Cursor overlay — render after monitors so it appears on top.
+    // Uses the unscrolled anchor pose + explicit scroll offset so the cursor
+    // tracks the scrolled wall correctly on all monitors.
     if (cursorOverlay_ && inputForwarder_) {
         int32_t cx, cy;
         inputForwarder_->GetCursorPosition(cx, cy);
         cursorOverlay_->SetPosition(cx, cy);
 
-        // Use monitor 0's pose as the cylinder center (all monitors share the same center).
         const MonitorDescriptor& mon0 = layout_.GetMonitor(0);
         if (mon0.active) {
+            const XrPosef anchorPose = layout_.GetToolbarAnchorPose();
             constexpr float kCylinderRadius = 1.6f;
             constexpr float kAspectRatio = 16.0f / 9.0f;
 
             if (auto* cursorLayer = cursorOverlay_->GetCompositionLayer(
-                    ctx_.GetWorldSpace(), mon0.worldPose,
+                    ctx_.GetWorldSpace(), anchorPose,
                     kCylinderRadius, MonitorLayout::kAngularStepRadians, kAspectRatio,
-                    layout_.IsSplitRows())) {
+                    layout_.IsSplitRows(),
+                    layout_.GetScrollYaw())) {
                 layerPtrs_[layerCount++] =
                     reinterpret_cast<const XrCompositionLayerBaseHeader*>(cursorLayer);
             }
