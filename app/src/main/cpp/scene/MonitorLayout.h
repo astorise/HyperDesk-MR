@@ -79,6 +79,10 @@ public:
     // and the cursor monitor stays within the ±60° comfort zone.
     void UpdateCarousel(uint32_t cursorMonitorIdx);
 
+    // Head-tracking scroll: when the user turns their head more than 75°
+    // away from the wall anchor, scroll proportionally (faster at larger angles).
+    void UpdateHeadScroll(const XrPosef& headPose);
+
     // Returns true if the monitor's center angle (with scroll) is within ±90°.
     bool IsMonitorInView(uint32_t index) const;
 

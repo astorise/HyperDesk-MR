@@ -372,6 +372,53 @@ void MonitorLayout::UpdateCarousel(uint32_t cursorMonitorIdx) {
     }
 }
 
+void MonitorLayout::UpdateHeadScroll(const XrPosef& headPose) {
+    if (!hasPrimaryAnchor_) return;
+
+    // Compute the horizontal yaw angle between the head gaze and the wall
+    // anchor forward direction (both projected onto the XZ plane).
+    XrVector3f headFwd = HeadForward(headPose.orientation);
+    headFwd.y = 0.0f;
+    headFwd = Normalize(headFwd, {0.0f, 0.0f, -1.0f});
+
+    XrVector3f anchorFwd = RotateVector(primaryAnchorOrientation_, {0.0f, 0.0f, -1.0f});
+    anchorFwd.y = 0.0f;
+    anchorFwd = Normalize(anchorFwd, {0.0f, 0.0f, -1.0f});
+
+    // Signed yaw difference: positive = head turned left, negative = turned right.
+    // cross.y gives the sine of the angle (with correct sign).
+    const float dot = Dot(headFwd, anchorFwd);
+    const float crossY = anchorFwd.x * headFwd.z - anchorFwd.z * headFwd.x;
+    const float angle = std::atan2(crossY, dot);  // radians, signed
+
+    constexpr float kHeadThreshold = 1.3089969f;  // 75° in radians
+    constexpr float kMaxScrollSpeed = 0.06f;       // radians per frame at 90°+
+
+    if (std::fabs(angle) <= kHeadThreshold) return;
+
+    // Excess past 75°, normalized: 0 at threshold, 1 at 90°.
+    const float excess = std::fabs(angle) - kHeadThreshold;
+    constexpr float kRange = 1.5707963f - kHeadThreshold;  // 90° − 75° = 15°
+    const float t = std::min(excess / kRange, 1.0f);
+    const float speed = kMaxScrollSpeed * t * t;  // quadratic ramp
+
+    // Head turned right (negative angle) → scroll wall left (increase scroll).
+    // Head turned left (positive angle) → scroll wall right (decrease scroll).
+    const float prev = scrollYaw_;
+    if (angle < 0.0f) {
+        scrollYaw_ += speed;
+    } else {
+        scrollYaw_ -= speed;
+    }
+
+    // Clamp: don't scroll mon0 past center.
+    scrollYaw_ = std::max(0.0f, scrollYaw_);
+
+    if (scrollYaw_ != prev) {
+        BuildDefaultLayout();
+    }
+}
+
 bool MonitorLayout::IsMonitorInView(uint32_t index) const {
     if (index >= kMaxMonitors) return false;
 

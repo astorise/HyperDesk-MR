@@ -778,6 +778,11 @@ void android_main(android_app* app) {
                 state.monitorLayout->UpdateCarousel(cursorMonIdx);
             }
 
+            // Head-tracking scroll: turn head past 75° to scroll the wall.
+            if (currentHeadPoseValid) {
+                state.monitorLayout->UpdateHeadScroll(currentHeadPose);
+            }
+
             state.xrContext->SyncActions();
             state.compositor->RenderFrame(frameState);
         } else {
