@@ -89,6 +89,9 @@ public:
     // Current scroll offset in radians (positive = wall shifted left).
     float GetScrollYaw() const { return scrollYaw_; }
 
+    // Reset the carousel scroll to zero (e.g. after a view reset).
+    void ResetScroll() { scrollYaw_ = 0.0f; BuildDefaultLayout(); }
+
     // Returns the unscrolled primary anchor pose (for the toolbar, which
     // stays fixed at the center of the field of view).
     XrPosef GetToolbarAnchorPose() const;

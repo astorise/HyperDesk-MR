@@ -804,6 +804,7 @@ void android_main(android_app* app) {
                 }
 
                 if (haveHeadPose) {
+                    state.monitorLayout->ResetScroll();
                     state.monitorLayout->AnchorPrimaryToHeadPose(headPose);
                     state.statusOverlay->AddLog("[OK] View reset from headset orientation");
                     state.xrContext->TriggerHapticPulse(0.5f, 100000000);

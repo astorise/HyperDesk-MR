@@ -17,11 +17,21 @@ public:
     void Detach() { instance_.store(nullptr); }
 
     void SetDesktopSize(uint32_t w, uint32_t h) {
-        desktopW_ = std::max<uint32_t>(1u, w);
-        desktopH_ = std::max<uint32_t>(1u, h);
-        // Reset cursor to the center of monitor[0] (at x=0, toolbar anchor).
-        cursorX_ = std::clamp<int32_t>(960, 0, static_cast<int32_t>(desktopW_ - 1));
-        cursorY_ = std::clamp<int32_t>(540, 0, static_cast<int32_t>(desktopH_ - 1));
+        const uint32_t newW = std::max<uint32_t>(1u, w);
+        const uint32_t newH = std::max<uint32_t>(1u, h);
+        // Only reset cursor when the desktop actually changes size,
+        // otherwise a reconnection for monitor growth would kill the
+        // cursor position mid-session.
+        const bool changed = (newW != desktopW_) || (newH != desktopH_);
+        desktopW_ = newW;
+        desktopH_ = newH;
+        if (changed) {
+            std::lock_guard<std::mutex> lock(cursorMutex_);
+            // Clamp existing cursor into the new bounds rather than
+            // always snapping to center — keeps the cursor position when growing.
+            cursorX_ = std::clamp(cursorX_, 0, static_cast<int32_t>(desktopW_ - 1));
+            cursorY_ = std::clamp(cursorY_, 0, static_cast<int32_t>(desktopH_ - 1));
+        }
     }
 
     // Toolbar band: tuned to match ImGuiToolbar quad touching the monitor bottom.

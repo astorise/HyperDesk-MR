@@ -157,7 +157,6 @@ void MonitorLayout::AnchorPrimaryToHeadPose(const XrPosef& headPose) {
     // cylinder surface at kCylinderRadius distance.
     primaryAnchorPosition_ = headPose.position;
     hasPrimaryAnchor_ = true;
-    scrollYaw_ = 0.0f;  // Reset carousel scroll on re-anchor.
 
     BuildDefaultLayout();
 
@@ -402,10 +401,11 @@ void MonitorLayout::UpdateHeadScroll(const XrPosef& headPose) {
     const float t = std::min(excess / kRange, 1.0f);
     const float speed = kMaxScrollSpeed * t * t;  // quadratic ramp
 
-    // Head turned right (negative angle) → scroll wall left (increase scroll).
-    // Head turned left (positive angle) → scroll wall right (decrease scroll).
+    // Head turned right (negative angle) → wall follows gaze (decrease scroll
+    // so monitors slide right, revealing left-side content).
+    // Head turned left (positive angle) → wall follows gaze (increase scroll).
     const float prev = scrollYaw_;
-    if (angle < 0.0f) {
+    if (angle > 0.0f) {
         scrollYaw_ += speed;
     } else {
         scrollYaw_ -= speed;
