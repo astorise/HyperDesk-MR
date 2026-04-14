@@ -129,11 +129,12 @@ void XrCompositor::RenderFrame(const XrFrameState& frameState) {
                 static_cast<int32_t>(MonitorLayout::kMaxMonitors - 1)));
             const float localU =
                 static_cast<float>(cx - static_cast<int32_t>(monIdx) * 1920) / 1920.0f;
+            // Match CursorOverlay: world yaw = i*step - scrollYaw + (u-0.5)*step.
             const float monYawDeg =
-                -static_cast<float>(monIdx) * MonitorLayout::kAngularStepRadians
+                static_cast<float>(monIdx) * MonitorLayout::kAngularStepRadians
                 * 180.0f / 3.14159265f;
             const float cursorAngleDeg =
-                monYawDeg + scrollDeg
+                monYawDeg - scrollDeg
                 + (localU - 0.5f) * (MonitorLayout::kAngularStepRadians
                                      * 180.0f / 3.14159265f);
             char buf[96];

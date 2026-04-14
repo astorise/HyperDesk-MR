@@ -785,13 +785,15 @@ void android_main(android_app* app) {
 
             // Keep the toolbar hit-band aligned with the scrolled wall.
             // Toolbar stays visually fixed at yaw 0 (anchor forward). When the
-            // wall scrolls by +scrollYaw, the desktop-X that maps to yaw 0 is
-            // 960 - (scrollYaw/step)*1920 (cursor yaw = -idx*step + scrollYaw
-            // + (u-0.5)*step; solving yaw=0 yields u = 0.5 - scrollYaw/step
-            // on mon 0, so desktopX shifts by -scrollYaw/step*1920).
+            // wall scrolls by +scrollYaw, monitor 0's visible center rotates
+            // to world yaw -scrollYaw, so the desktop-X that sits in front of
+            // the user (world yaw 0) is 960 + (scrollYaw/step)*1920.
+            // Cursor formula: world yaw = i*step - scrollYaw + (u-0.5)*step;
+            // solving yaw=0 on mon 0 yields u = 0.5 + scrollYaw/step,
+            // so desktopX shifts by +scrollYaw/step*1920.
             if (state.inputForwarder) {
                 const float scrollYaw = state.monitorLayout->GetScrollYaw();
-                const int32_t toolbarOffsetX = -static_cast<int32_t>(
+                const int32_t toolbarOffsetX = static_cast<int32_t>(
                     scrollYaw / MonitorLayout::kAngularStepRadians * 1920.0f);
                 state.inputForwarder->SetToolbarOffsetX(toolbarOffsetX);
             }

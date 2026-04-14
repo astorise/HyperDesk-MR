@@ -150,7 +150,12 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
         monitorYaw = -static_cast<float>(monitorIdx) * kArcStep;
     }
 
-    float cursorAngle = monitorYaw + scrollYaw + (localU - 0.5f) * centralAngle;
+    // Monitor i's world orientation = anchorOrient * YawQuat(-i*step + scrollYaw).
+    // Rotating local -Z by YawQuat(θ) yields (-sin θ, 0, -cos θ), so monitor i's
+    // visible center has world yaw = -(-i*step + scrollYaw) = i*step - scrollYaw.
+    // The cursor quad uses cx = r*sin(α), cz = -r*cos(α) — this places it at
+    // world yaw +α — so we need α = i*step - scrollYaw + (localU - 0.5)*step.
+    float cursorAngle = -monitorYaw - scrollYaw + (localU - 0.5f) * centralAngle;
 
     // 3D position on cylinder surface, pulled 2cm toward viewer.
     constexpr float kZOffset = 0.02f;
