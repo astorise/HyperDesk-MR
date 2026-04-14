@@ -229,6 +229,19 @@ const XrCompositionLayerQuad* CursorOverlay::GetCompositionLayer(
     XrSwapchainImageReleaseInfo releaseInfo{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
     xrReleaseSwapchainImage(swapchain_, &releaseInfo);
 
+    static int logCounter = 0;
+    if (++logCounter % 72 == 0) {
+        LOGI("CursorOverlay: desktop=(%d,%d) mon=%u localU=%.3f localV=%.3f scroll=%.1f° monYaw=%.1f° cursorAngle=%.1f° anchor=(%.2f,%.2f,%.2f) quadPos=(%.2f,%.2f,%.2f)",
+             dx, dy, monitorIdx, localU, localV,
+             scrollYaw * 180.0f / 3.14159265f,
+             monitorYaw * 180.0f / 3.14159265f,
+             cursorAngle * 180.0f / 3.14159265f,
+             cylinderCenter.position.x, cylinderCenter.position.y, cylinderCenter.position.z,
+             compositionLayer_.pose.position.x,
+             compositionLayer_.pose.position.y,
+             compositionLayer_.pose.position.z);
+    }
+
     return &compositionLayer_;
 }
 

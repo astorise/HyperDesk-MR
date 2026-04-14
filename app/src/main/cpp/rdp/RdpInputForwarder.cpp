@@ -33,12 +33,24 @@ bool RdpInputForwarder::GetToolbarCursor(float& u, float& v) const {
         x = cursorX_;
         y = cursorY_;
     }
-    if (!IsCursorInToolbarBandLocked(x, y)) return false;
+    const bool inside = IsCursorInToolbarBandLocked(x, y);
 
     const int32_t centerX = 960 + toolbarOffsetX_;
     const int32_t bandLeft = centerX - kToolbarBandHalfWidth;
     const int32_t bandWidth = kToolbarBandHalfWidth * 2;
     const int32_t bandTop = static_cast<int32_t>(desktopH_) + kToolbarBandY0;
+
+    static int32_t logCounter = 0;
+    if (++logCounter % 72 == 0) {
+        LOGI("ToolbarBand: cur=(%d,%d) offsetX=%d centerX=%d band=[%d..%d]x[%d..%d] dH=%u inside=%d",
+             x, y, toolbarOffsetX_, centerX,
+             bandLeft, centerX + kToolbarBandHalfWidth,
+             bandTop, bandTop + kToolbarBandHeight,
+             desktopH_, inside ? 1 : 0);
+    }
+
+    if (!inside) return false;
+
     u = static_cast<float>(x - bandLeft) /
         static_cast<float>(bandWidth);
     v = static_cast<float>(y - bandTop) /
