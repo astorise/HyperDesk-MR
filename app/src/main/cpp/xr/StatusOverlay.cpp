@@ -381,11 +381,12 @@ const XrCompositionLayerQuad* StatusOverlay::GetCompositionLayer(XrSpace worldSp
     sub.imageArrayIndex       = 0;
     compositionLayer_.subImage = sub;
 
-    // Dev placement: lay the overlay on the floor in front of the user,
-    // tilted 60° toward the viewer so it stays readable from a standing pose.
+    // Dev placement: lay the overlay ~30 cm above the floor, 70 cm in front
+    // of the STAGE origin, tilted 60° toward the viewer so it stays readable
+    // from a standing pose. (Stage space has y=0 at the floor, not at eye.)
     // Rotation of -60° around X: quat = (sin(-30°), 0, 0, cos(-30°)).
     compositionLayer_.pose.orientation = {-0.5f, 0.f, 0.f, 0.8660254f};
-    compositionLayer_.pose.position   = {0.f, -0.5f, -0.7f};
+    compositionLayer_.pose.position   = {0.f, 0.3f, -0.7f};
     const float overlayWidth = 1.35f;
     compositionLayer_.size            = {overlayWidth, overlayWidth * (static_cast<float>(texHeight_) /
                                                                        static_cast<float>(texWidth_))};
