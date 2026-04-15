@@ -533,6 +533,7 @@ void android_main(android_app* app) {
 
                 state.secondaryRdpManagers[targetMonitor] = std::move(secondary);
                 state.monitorLayout->SetMonitorActive(targetMonitor, true);
+                state.monitorLayout->RevealMonitor(targetMonitor);
                 snprintf(buf, sizeof(buf), "[OK] Secondary connection on monitor %u",
                          static_cast<unsigned>(targetMonitor));
                 state.statusOverlay->AddLog(buf);

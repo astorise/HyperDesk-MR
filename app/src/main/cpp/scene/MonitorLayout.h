@@ -83,8 +83,12 @@ public:
     // away from the wall anchor, scroll proportionally (faster at larger angles).
     void UpdateHeadScroll(const XrPosef& headPose);
 
-    // Returns true if the monitor's center angle (with scroll) is within ±90°.
+    // Returns true if the monitor's center angle (with scroll) is within ±120°.
     bool IsMonitorInView(uint32_t index) const;
+
+    // Scroll the wall so the monitor at `index` is fully in view. No-op if
+    // already visible. Intended to be called when a new monitor is added.
+    void RevealMonitor(uint32_t index);
 
     // Current scroll offset in radians (positive = wall shifted left).
     float GetScrollYaw() const { return scrollYaw_; }

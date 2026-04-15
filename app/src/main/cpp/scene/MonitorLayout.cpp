@@ -419,11 +419,28 @@ void MonitorLayout::UpdateHeadScroll(const XrPosef& headPose) {
     }
 }
 
+void MonitorLayout::RevealMonitor(uint32_t index) {
+    if (index >= kMaxMonitors) return;
+
+    // Monitor base yaw is -index*step. With scrollYaw applied, the monitor's
+    // right edge sits at effectiveYaw - step/2. Ensure the full monitor fits
+    // within the ±120° view by requiring effectiveYaw >= -120° + step/2.
+    constexpr float kMaxAngle = 2.0943951f;            // 120°
+    const float baseYaw = MonitorBaseYaw(index, splitRows_);
+    const float minEffective = -kMaxAngle + kArcStep * 0.5f;
+    const float requiredScroll = minEffective - baseYaw;
+
+    if (requiredScroll > scrollYaw_) {
+        scrollYaw_ = requiredScroll;
+        BuildDefaultLayout();
+    }
+}
+
 bool MonitorLayout::IsMonitorInView(uint32_t index) const {
     if (index >= kMaxMonitors) return false;
 
     const float effectiveYaw = MonitorBaseYaw(index, splitRows_) + scrollYaw_;
-    constexpr float kMaxAngle = 1.5707963f;  // 90° in radians
+    constexpr float kMaxAngle = 2.0943951f;  // 120° in radians
     return std::fabs(effectiveYaw) <= kMaxAngle;
 }
 
