@@ -131,7 +131,7 @@ jobs:
         run: ./gradlew assembleDebug -PcmakeArgs="-DFETCHCONTENT_SOURCE_DIR_ZXING-CPP=/tmp/zxing-cpp"
 
       - name: Upload APK artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: hyperdesk-mr-debug
           path: app/build/outputs/apk/debug/*.apk
